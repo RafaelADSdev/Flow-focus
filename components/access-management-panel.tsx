@@ -1,0 +1,359 @@
+"use client";
+
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Check, Pencil, Search, Trash2, UserPlus } from "lucide-react";
+import { atualizarAcesso, criarAcesso, desativarAcesso, reativarAcesso } from "@/lib/actions/acesso";
+import { passwordFromBitrixId } from "@/lib/auth/bitrix-password";
+import {
+  editarAcessoSchema,
+  esteiraDashboardLabel,
+  novoAcessoSchema,
+  perfilLabels,
+  type NovoAcessoInput,
+} from "@/lib/schemas/acesso";
+import type { AcessoListItem, EquipeOption } from "@/lib/types/acesso";
+import { initials } from "@/lib/utils";
+import { StatusBadge } from "./status-badge";
+
+const perfilOptions = Object.entries(perfilLabels) as Array<[NovoAcessoInput["perfil"], string]>;
+
+const emptyForm: NovoAcessoInput = {
+  email: "",
+  senha: "",
+  perfil: "lider",
+  esteira: "geral",
+  equipeId: null,
+};
+
+type AccessManagementPanelProps = {
+  usuarios: AcessoListItem[];
+  equipes: EquipeOption[];
+  canManage: boolean;
+  loadError?: string | null;
+};
+
+export function AccessManagementPanel({ usuarios, equipes, canManage, loadError = null }: AccessManagementPanelProps) {
+  const router = useRouter();
+  const [form, setForm] = useState<NovoAcessoInput>(emptyForm);
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const filtered = useMemo(
+    () => usuarios.filter((user) => [user.email, user.nome, user.equipeNome ?? ""].join(" ").toLowerCase().includes(query.toLowerCase())),
+    [query, usuarios],
+  );
+
+  const needsTeam = form.perfil === "corretor" || form.perfil === "lider";
+
+  function updateField<K extends keyof NovoAcessoInput>(key: K, value: NovoAcessoInput[K]) {
+    setSaved(false);
+    setError("");
+    setForm((current) => {
+      const next = { ...current, [key]: value };
+      if (key === "perfil" && !["corretor", "lider"].includes(String(value))) {
+        next.equipeId = null;
+      }
+      return next;
+    });
+  }
+
+  function resetForm() {
+    setForm(emptyForm);
+    setEditingId(null);
+    setError("");
+    setSaved(false);
+  }
+
+  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canManage) {
+      setError("Configure SUPABASE_SECRET_KEY no servidor para criar e editar acessos.");
+      return;
+    }
+
+    startTransition(async () => {
+      if (editingId) {
+        const parsed = editarAcessoSchema.safeParse({ ...form, id: editingId });
+        if (!parsed.success) {
+          setError(parsed.error.issues[0]?.message ?? "Revise os campos do formulário.");
+          return;
+        }
+        const result = await atualizarAcesso(parsed.data);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+      } else {
+        const parsed = novoAcessoSchema.safeParse(form);
+        if (!parsed.success) {
+          setError(parsed.error.issues[0]?.message ?? "Revise os campos do formulário.");
+          return;
+        }
+        const result = await criarAcesso(parsed.data);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+      }
+
+      setSaved(true);
+      resetForm();
+      router.refresh();
+      setTimeout(() => setSaved(false), 2400);
+    });
+  }
+
+  function startEdit(user: AcessoListItem) {
+    setEditingId(user.id);
+    setSaved(false);
+    setError("");
+    setForm({
+      email: user.email,
+      senha: user.bitrixUserId ? passwordFromBitrixId(user.bitrixUserId) : "",
+      perfil: user.perfil,
+      esteira: "geral",
+      equipeId: user.equipeId,
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function toggleAccess(user: AcessoListItem) {
+    if (!canManage) {
+      setError("Configure SUPABASE_SECRET_KEY no servidor para alterar acessos.");
+      return;
+    }
+
+    startTransition(async () => {
+      const result = user.ativo ? await desativarAcesso(user.id) : await reativarAcesso(user.id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      if (editingId === user.id) resetForm();
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="access-page">
+      {saved ? (
+        <div className="success-banner">
+          <Check size={18} />
+          Acesso salvo com sucesso.
+          <button type="button" onClick={() => setSaved(false)} aria-label="Fechar aviso">
+            ×
+          </button>
+        </div>
+      ) : null}
+
+      {!canManage ? (
+        <p className="form-error access-config-warning" role="status">
+          A gestão de acesso exige `SUPABASE_SECRET_KEY` no `.env.local` para criar, editar e desativar usuários no Supabase Auth.
+        </p>
+      ) : null}
+
+      {loadError ? (
+        <p className="form-error access-config-warning" role="alert">
+          Não foi possível carregar os acessos: {loadError}
+        </p>
+      ) : null}
+
+      <section className="access-card">
+        <div className="access-card-heading">
+          <span className="access-card-icon" aria-hidden="true">
+            <UserPlus size={18} />
+          </span>
+          <div>
+            <h2>{editingId ? "Editar acesso" : "Novo acesso"}</h2>
+            <p>Cria a conta no Supabase Auth e define visão, esteira e equipe. Senha mínima: 6 caracteres.</p>
+          </div>
+        </div>
+
+        <form className="access-form" onSubmit={onSubmit} noValidate>
+          <div className="access-form-grid access-form-grid-2">
+            <div className="field">
+              <label htmlFor="email">E-mail</label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                value={form.email}
+                onChange={(event) => updateField("email", event.target.value)}
+                placeholder="usuario@empresa.com"
+                autoComplete="off"
+                disabled={Boolean(editingId) || pending}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="senha">{editingId ? "Senha de acesso" : "Senha temporária"}</label>
+              <input
+                id="senha"
+                name="senha"
+                type="password"
+                value={form.senha}
+                onChange={(event) => updateField("senha", event.target.value)}
+                placeholder={editingId ? "Definida pelo ID do Bitrix" : "Mínimo 6 caracteres"}
+                autoComplete="new-password"
+                disabled={pending || Boolean(editingId && usuarios.find((user) => user.id === editingId)?.bitrixUserId)}
+              />
+              {editingId && usuarios.find((user) => user.id === editingId)?.bitrixUserId ? (
+                <small className="field-hint">Senha automática: ID do Bitrix com zeros à esquerda até 6 dígitos.</small>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="field access-profile-field">
+            <label htmlFor="perfil">Visão</label>
+            <select
+              id="perfil"
+              name="perfil"
+              value={form.perfil}
+              onChange={(event) => updateField("perfil", event.target.value as NovoAcessoInput["perfil"])}
+              disabled={pending}
+            >
+              {perfilOptions.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <fieldset className="field access-choice-fieldset">
+            <legend>Esteira do dashboard</legend>
+            <div className="access-choice-group">
+              <label className="access-choice-card is-checked">
+                <input type="radio" name="esteira" value="geral" checked readOnly />
+                <span className="access-choice-indicator radio" aria-hidden="true" />
+                <span className="access-choice-label">{esteiraDashboardLabel}</span>
+              </label>
+            </div>
+          </fieldset>
+
+          {needsTeam ? (
+            <fieldset className="field access-choice-fieldset">
+              <legend>Equipe</legend>
+              {equipes.length ? (
+                <div className="access-choice-group">
+                  {equipes.map((equipe) => {
+                    const checked = form.equipeId === equipe.id;
+                    return (
+                      <label key={equipe.id} className={`access-choice-card${checked ? " is-checked" : ""}`}>
+                        <input
+                          type="radio"
+                          name="equipe"
+                          value={equipe.id}
+                          checked={checked}
+                          onChange={() => updateField("equipeId", equipe.id)}
+                          disabled={pending}
+                        />
+                        <span className="access-choice-indicator radio" aria-hidden="true" />
+                        <span className="access-choice-label">{equipe.nome}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="field-hint">Nenhuma equipe sincronizada. Execute a sincronização do Bitrix antes de criar líderes e corretores.</p>
+              )}
+            </fieldset>
+          ) : null}
+
+          {error ? (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+
+          <div className="access-form-actions">
+            {editingId ? (
+              <button type="button" className="button button-quiet" onClick={resetForm} disabled={pending}>
+                Cancelar edição
+              </button>
+            ) : null}
+            <button type="submit" className="button button-primary" disabled={pending || !canManage}>
+              <UserPlus size={16} />
+              {pending ? "Salvando..." : editingId ? "Salvar alterações" : "Criar acesso"}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <div>
+            <h2>Acessos cadastrados</h2>
+            <p>Edite ou desative acessos existentes. Alterações de visão e equipe entram em vigor no próximo login.</p>
+          </div>
+        </div>
+
+        <div className="toolbar">
+          <label className="search-box">
+            <Search size={18} />
+            <span className="sr-only">Buscar acesso</span>
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por e-mail, nome ou equipe" />
+          </label>
+          <span className="toolbar-spacer" />
+          <span className="access-count">{filtered.length} acessos</span>
+        </div>
+
+        <div className="access-table">
+          <div className="access-head">
+            <span>Usuário</span>
+            <span>Visão</span>
+            <span>Esteira</span>
+            <span>Equipe</span>
+            <span>Situação</span>
+            <span>Ações</span>
+          </div>
+          {filtered.map((user) => (
+            <div className="access-row" key={user.id}>
+              <span className="broker-cell">
+                <span className="avatar avatar-light">{initials(user.nome)}</span>
+                <span>
+                  <strong>{user.nome}</strong>
+                  <small>{user.email}</small>
+                </span>
+              </span>
+              <span>{perfilLabels[user.perfil]}</span>
+              <span>{esteiraDashboardLabel}</span>
+              <span>
+                <strong>{user.equipeNome ?? "Todas"}</strong>
+              </span>
+              <span>{user.ativo ? <StatusBadge tone="success">Ativo</StatusBadge> : <StatusBadge tone="neutral">Inativo</StatusBadge>}</span>
+              <span className="access-actions">
+                <button type="button" className="icon-button" onClick={() => startEdit(user)} aria-label={`Editar ${user.nome}`} disabled={pending}>
+                  <Pencil size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => toggleAccess(user)}
+                  aria-label={user.ativo ? `Desativar ${user.nome}` : `Reativar ${user.nome}`}
+                  disabled={pending || !canManage}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {!filtered.length ? (
+          <div className="empty-state">
+            <Search size={24} />
+            <h2>Nenhum acesso encontrado</h2>
+            <p>Tente outro termo de busca ou crie um novo acesso acima.</p>
+            <button type="button" className="button button-secondary" onClick={() => setQuery("")}>
+              Limpar busca
+            </button>
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}

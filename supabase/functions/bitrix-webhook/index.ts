@@ -68,7 +68,7 @@ async function bitrixCall<T>(method: string, params?: URLSearchParams) {
   const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
   if (!response.ok) throw new Error(`Bitrix respondeu HTTP ${response.status}`);
   const body = await response.json() as { result?: T; error?: string; error_description?: string; total?: number; next?: number };
-  if (body.error || body.result === undefined) throw new Error(body.error_description ?? body.error ?? "Resposta invalida do Bitrix");
+  if (body.error || body.result === undefined) throw new Error(body.error_description ?? body.error ?? "Resposta inválida do Bitrix");
   return body;
 }
 
@@ -99,7 +99,7 @@ async function upsertRoulette() {
     bitrix_funil_id: `${categoryId}:${stageId}:${rouletteTag.toLocaleLowerCase()}`,
     bitrix_category_id: categoryId,
     bitrix_roleta_valor: rouletteTag,
-    descricao: `Negocios em ${stageId} cuja Roleta Atual contem ${rouletteTag}`,
+    descricao: `Negócios em ${stageId} cuja Roleta Atual contém ${rouletteTag}`,
     ativa: true,
   }, { onConflict: "bitrix_funil_id" }).select("id").single();
   if (error) throw error;
@@ -162,13 +162,13 @@ function chunks<T>(items: T[], size: number) {
 
 async function fetchDepartment(id: string) {
   const result = (await bitrixCall<JsonRecord[]>("department.get", new URLSearchParams({ ID: id }))).result!;
-  if (!result[0]) throw new Error(`Departamento Bitrix ${id} nao encontrado`);
+  if (!result[0]) throw new Error(`Departamento Bitrix ${id} não encontrado`);
   return result[0];
 }
 
 async function validateDepartmentHierarchy(teams: JsonRecord[]) {
   if (teams.some((team) => String(team.PARENT ?? "") !== directorateDepartmentId)) {
-    throw new Error("Uma das equipes nao pertence a diretoria Focus configurada");
+    throw new Error("Uma das equipes não pertence à diretoria Focus configurada");
   }
   let current = await fetchDepartment(directorateDepartmentId);
   for (let depth = 0; depth < 10; depth += 1) {
@@ -177,7 +177,7 @@ async function validateDepartmentHierarchy(teams: JsonRecord[]) {
     if (!parentId) break;
     current = await fetchDepartment(parentId);
   }
-  throw new Error("A diretoria Focus nao pertence a superintendencia configurada");
+  throw new Error("A diretoria Focus não pertence à superintendência configurada");
 }
 
 async function fetchActiveTeamUsers(departmentId: string) {
@@ -241,7 +241,7 @@ async function synchronizeTeamsAndUsers() {
 
   for (const group of teamUsers) {
     const team = savedTeams?.find((item) => String(item.bitrix_department_id) === group.departmentId);
-    if (!team) throw new Error(`Equipe ${group.departmentId} nao foi persistida`);
+    if (!team) throw new Error(`Equipe ${group.departmentId} não foi persistida`);
     for (const bitrixUser of group.users) {
       const bitrixUserId = String(bitrixUser.ID ?? "");
       const email = String(bitrixUser.EMAIL ?? "").trim().toLocaleLowerCase();
@@ -335,7 +335,7 @@ async function synchronizeEligibleDeals() {
     bitrix_funil_id: `${categoryId}:${stageId}:${rouletteTag.toLocaleLowerCase()}`,
     bitrix_category_id: categoryId,
     bitrix_roleta_valor: rouletteTag,
-    descricao: `Negocios em ${stageId} cuja Roleta Atual contem ${rouletteTag}`,
+    descricao: `Negócios em ${stageId} cuja Roleta Atual contém ${rouletteTag}`,
     ativa: true,
   }, { onConflict: "bitrix_funil_id" }).select("id").single();
   if (rouletteError) throw rouletteError;

@@ -22,7 +22,7 @@ export function LoginForm() {
     if (!hasSupabaseEnv()) { await new Promise((resolve) => setTimeout(resolve, 650)); router.push("/corretor"); return; }
     const supabase = createClient();
     const { error: authError } = await supabase.auth.signInWithPassword(parsed.data);
-    if (authError) { setError("Nao foi possivel entrar. Confira e-mail e senha."); setPending(false); return; }
+    if (authError) { setError("Não foi possível entrar. Confira e-mail e senha."); setPending(false); return; }
     router.push("/corretor"); router.refresh();
   }
 
@@ -31,6 +31,6 @@ export function LoginForm() {
     <div className="field"><div className="label-row"><label htmlFor="password">Senha</label><button type="button" className="text-button">Esqueci minha senha</button></div><div className="password-field"><input id="password" name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" defaultValue="flowfocus" /><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
     {error ? <p className="form-error" role="alert">{error}</p> : null}
     <button className="button button-primary login-submit" disabled={pending}>{pending ? <><LoaderCircle size={18} className="spin" />Entrando...</> : <>Entrar no Flow Focus<ArrowRight size={18} /></>}</button>
-    {!hasSupabaseEnv() && <p className="demo-note">Modo demonstracao: use os dados preenchidos para acessar.</p>}
+    {!hasSupabaseEnv() && <p className="demo-note">Modo demonstração: use os dados preenchidos para acessar.</p>}
   </form>;
 }

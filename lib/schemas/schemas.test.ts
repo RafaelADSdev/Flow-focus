@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { loginSchema } from "./auth";
 import { auditoriaSchema } from "./auditoria";
 import { bitrixWebhookSchema } from "./bitrix";
+import { editarAcessoSchema, novoAcessoSchema } from "./acesso";
+import { passwordFromBitrixId } from "../auth/bitrix-password";
 
 describe("schemas compartilhados", () => {
   it("aceita um login corporativo valido", () => {
@@ -23,5 +25,43 @@ describe("schemas compartilhados", () => {
       criterios: [],
     });
     expect(result.success).toBe(false);
+  });
+
+  it("carrega os schemas de criacao e edicao de acesso no Zod 4", () => {
+    const equipeId = "45fbad56-6064-4b60-98b0-9b7ef75ab001";
+
+    expect(novoAcessoSchema.safeParse({
+      email: "corretor@focus.com.br",
+      senha: "senha123",
+      perfil: "corretor",
+      esteira: "geral",
+      equipeId,
+    }).success).toBe(true);
+
+    expect(editarAcessoSchema.safeParse({
+      id: "15b86593-affb-4c90-ba4c-8d2daf2ec97b",
+      senha: "",
+      perfil: "admin",
+      esteira: "geral",
+      equipeId: null,
+    }).success).toBe(true);
+  });
+
+  it("mantem equipe obrigatoria para lideres e corretores", () => {
+    const result = editarAcessoSchema.safeParse({
+      id: "15b86593-affb-4c90-ba4c-8d2daf2ec97b",
+      senha: "",
+      perfil: "lider",
+      esteira: "geral",
+      equipeId: null,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("gera senha de seis digitos a partir do ID do Bitrix", () => {
+    expect(passwordFromBitrixId("1326")).toBe("001326");
+    expect(passwordFromBitrixId("123456")).toBe("123456");
+    expect(() => passwordFromBitrixId("13A6")).toThrow("ID do Bitrix inválido.");
   });
 });

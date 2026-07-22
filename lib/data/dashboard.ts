@@ -25,6 +25,6 @@ export type DashboardData = z.infer<typeof dashboardSchema>;
 export async function getDashboardData(days = 7): Promise<DashboardData> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("obter_dashboard", { p_dias: days });
-  if (error) throw new Error(`Nao foi possivel carregar o dashboard: ${error.message}`);
+  if (error) throw new Error(`Não foi possível carregar o dashboard: ${error.message}`);
   return dashboardSchema.parse(data);
 }

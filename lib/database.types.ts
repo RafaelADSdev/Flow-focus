@@ -73,6 +73,9 @@ export type Database = {
       captar_oportunidade: { Args: { p_roleta_id: string }; Returns: Json };
       concluir_auditoria: { Args: { p_auditoria_id: string; p_status: StatusAuditoria; p_observacoes: string; p_criterios: Json }; Returns: Json };
       obter_dashboard: { Args: { p_dias?: number }; Returns: Json };
+      obter_carteira: { Args: Record<string, never>; Returns: Json };
+      obter_config_roletas: { Args: Record<string, never>; Returns: Json };
+      obter_painel_auditorias: { Args: Record<string, never>; Returns: Json };
     };
     Enums: {
       perfil_usuario: PerfilUsuario;

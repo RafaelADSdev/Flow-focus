@@ -1,9 +1,16 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { QueryProvider } from "@/components/query-provider";
+import { plusJakartaSans } from "@/lib/fonts";
 
-export const metadata: Metadata = { title: { default: "Flow Focus", template: "%s · Flow Focus" }, description: "Distribuicao inteligente e auditavel de oportunidades comerciais." };
+export const metadata: Metadata = { title: { default: "Flow Focus", template: "%s · Flow Focus" }, description: "Distribuição inteligente e auditável de oportunidades comerciais." };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="pt-BR"><body><QueryProvider>{children}</QueryProvider></body></html>;
+  return (
+    <html lang="pt-BR" className={plusJakartaSans.variable}>
+      <body className={plusJakartaSans.className}>
+        <QueryProvider>{children}</QueryProvider>
+      </body>
+    </html>
+  );
 }

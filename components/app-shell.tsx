@@ -2,51 +2,105 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, ClipboardCheck, LifeBuoy, LogOut, Network, Settings2, UserRoundSearch } from "lucide-react";
+import { useEffect, useState } from "react";
+import { LogOut, PanelLeftClose, PanelLeftOpen, Settings2 } from "lucide-react";
+import { signOutAction } from "@/lib/actions/auth";
+import type { AppUser } from "@/lib/types/app-user";
+import { appNavigation } from "@/lib/app-navigation";
+import { formatUserRole, greetingForName } from "@/lib/greeting";
+import { AppTopbar } from "./app-topbar";
 import { BrandMark } from "./brand-mark";
 
-const navigation = [
-  { href: "/corretor", label: "Minha carteira", icon: UserRoundSearch, count: undefined },
-  { href: "/roletas", label: "Roletas", icon: Network, count: undefined },
-  { href: "/auditorias", label: "Auditorias", icon: ClipboardCheck, count: 3 },
-  { href: "/dashboard", label: "Produtividade", icon: BarChart3, count: undefined },
-] as const;
+function MobileGreeting({ user }: { user: AppUser }) {
+  const [greeting, setGreeting] = useState(() => greetingForName(user.nome));
 
-export function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  useEffect(() => {
+    setGreeting(greetingForName(user.nome));
+    const interval = window.setInterval(() => setGreeting(greetingForName(user.nome)), 60_000);
+    return () => window.clearInterval(interval);
+  }, [user.nome]);
+
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className="mobile-greeting">
+      <p className="mobile-greeting-title">{greeting}</p>
+      <p className="mobile-greeting-meta">{formatUserRole(user.perfil, user.equipeNome)}</p>
+    </div>
+  );
+}
+
+export function AppShell({ children, user }: { children: React.ReactNode; user: AppUser }) {
+  const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <div className={`app-shell${collapsed ? " sidebar-collapsed" : ""}`}>
+      <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
         <div className="sidebar-top">
-          <BrandMark />
-          <span className="environment">OPERACAO COMERCIAL</span>
+          <BrandMark compact={collapsed} variant="on-dark" />
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setCollapsed((value) => !value)}
+            aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+            aria-expanded={!collapsed}
+          >
+            {collapsed ? <PanelLeftOpen size={18} strokeWidth={1.6} /> : <PanelLeftClose size={18} strokeWidth={1.6} />}
+          </button>
         </div>
-        <nav className="primary-nav" aria-label="Navegacao principal">
-          {navigation.map(({ href, label, icon: Icon, count }) => {
+        <nav className="primary-nav" aria-label="Navegação principal">
+          {appNavigation.map(({ href, label, icon: Icon, count }) => {
             const active = pathname === href;
-            return <Link className={active ? "nav-link active" : "nav-link"} href={href} key={href} aria-current={active ? "page" : undefined}>
-              <Icon size={18} strokeWidth={1.8} aria-hidden="true" />
-              <span>{label}</span>
-              {count ? <span className="nav-count">{count}</span> : null}
-            </Link>;
+            return (
+              <Link
+                className={active ? "nav-link active" : "nav-link"}
+                href={href}
+                key={href}
+                aria-current={active ? "page" : undefined}
+                title={collapsed ? label : undefined}
+              >
+                <Icon size={18} strokeWidth={1.6} aria-hidden="true" />
+                <span className="nav-label">{label}</span>
+                {count ? <span className="nav-count">{count}</span> : null}
+              </Link>
+            );
           })}
+          <Link
+            href="/configuracoes"
+            className={pathname.startsWith("/configuracoes") ? "nav-link active" : "nav-link"}
+            title={collapsed ? "Configurações" : undefined}
+          >
+            <Settings2 size={18} strokeWidth={1.6} aria-hidden="true" />
+            <span className="nav-label">Configurações</span>
+          </Link>
         </nav>
-        <div className="sidebar-bottom">
-          <Link href="/configuracoes" className="nav-link"><Settings2 size={18} aria-hidden="true" />Configuracoes</Link>
-          <Link href="/ajuda" className="nav-link"><LifeBuoy size={18} aria-hidden="true" />Ajuda</Link>
-          <div className="profile-summary">
-            <span className="avatar">MP</span>
-            <span><strong>Marcela Parahyba</strong><small>Lider · Equipe Jordao</small></span>
-            <Link href="/login" title="Sair"><LogOut size={17} aria-label="Sair" /></Link>
+      </aside>
+
+      <div className="shell-main">
+        <div className="mobile-header">
+          <BrandMark variant="on-light" />
+          <MobileGreeting user={user} />
+          <div className="mobile-header-actions">
+            <Link href="/configuracoes" className="mobile-header-icon" aria-label="Configurações">
+              <Settings2 size={18} strokeWidth={1.6} aria-hidden="true" />
+            </Link>
+            <form action={signOutAction}>
+              <button type="submit" className="mobile-header-icon" aria-label="Sair">
+                <LogOut size={18} strokeWidth={1.6} aria-hidden="true" />
+              </button>
+            </form>
           </div>
         </div>
-      </aside>
-      <div className="mobile-header"><BrandMark /><span className="avatar">MP</span></div>
-      <main className="main-content">{children}</main>
-      <nav className="mobile-nav" aria-label="Navegacao movel">
-        {navigation.map(({ href, label, icon: Icon, count }) => <Link href={href} key={href} className={pathname === href ? "active" : ""} aria-label={label}>
-          <Icon size={20} aria-hidden="true" />{count ? <span>{count}</span> : null}
-        </Link>)}
+        <AppTopbar user={user} />
+        <main className="main-content">{children}</main>
+      </div>
+
+      <nav className="mobile-nav" aria-label="Navegação móvel">
+        {appNavigation.map(({ href, label, icon: Icon, count }) => (
+          <Link href={href} key={href} className={pathname === href ? "active" : ""} aria-label={label}>
+            <Icon size={20} aria-hidden="true" />
+            {count ? <span>{count}</span> : null}
+          </Link>
+        ))}
       </nav>
     </div>
   );
