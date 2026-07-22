@@ -1,0 +1,1 @@
+export default function Loading() { return <main className="route-loading" aria-label="Carregando"><div className="skeleton skeleton-title"/><div className="skeleton skeleton-copy"/><div className="skeleton skeleton-panel"/></main>; }

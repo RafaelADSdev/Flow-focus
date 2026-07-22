@@ -1,0 +1,13 @@
+{
+  "event": "ONCRMDEALUPDATE",
+  "event_id": "mock-deal-9281-update-1",
+  "data": {
+    "FIELDS": {
+      "ID": "9281",
+      "CATEGORY_ID": "0",
+      "TITLE": "Interesse no Horizonte Park",
+      "OPPORTUNITY": "680000",
+      "STAGE_SEMANTIC_ID": "F"
+    }
+  }
+}
