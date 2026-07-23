@@ -2,9 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Pencil, Search, Trash2, UserPlus } from "lucide-react";
-import { atualizarAcesso, criarAcesso, desativarAcesso, reativarAcesso } from "@/lib/actions/acesso";
-import { passwordFromBitrixId } from "@/lib/auth/bitrix-password";
+import { Check, Pencil, RefreshCw, Search, Trash2, UserPlus } from "lucide-react";
+import { atualizarAcesso, criarAcesso, desativarAcesso, reativarAcesso, sincronizarEquipesBitrix } from "@/lib/actions/acesso";
 import {
   editarAcessoSchema,
   esteiraDashboardLabel,
@@ -30,10 +29,17 @@ type AccessManagementPanelProps = {
   usuarios: AcessoListItem[];
   equipes: EquipeOption[];
   canManage: boolean;
+  canSyncBitrix: boolean;
   loadError?: string | null;
 };
 
-export function AccessManagementPanel({ usuarios, equipes, canManage, loadError = null }: AccessManagementPanelProps) {
+export function AccessManagementPanel({
+  usuarios,
+  equipes,
+  canManage,
+  canSyncBitrix,
+  loadError = null,
+}: AccessManagementPanelProps) {
   const router = useRouter();
   const [form, setForm] = useState<NovoAcessoInput>(emptyForm);
   const [query, setQuery] = useState("");
@@ -41,6 +47,8 @@ export function AccessManagementPanel({ usuarios, equipes, canManage, loadError 
   const [saved, setSaved] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [syncPending, startSyncTransition] = useTransition();
+  const [syncNotice, setSyncNotice] = useState("");
 
   const filtered = useMemo(
     () => usuarios.filter((user) => [user.email, user.nome, user.equipeNome ?? ""].join(" ").toLowerCase().includes(query.toLowerCase())),
@@ -113,7 +121,7 @@ export function AccessManagementPanel({ usuarios, equipes, canManage, loadError 
     setError("");
     setForm({
       email: user.email,
-      senha: user.bitrixUserId ? passwordFromBitrixId(user.bitrixUserId) : "",
+      senha: "",
       perfil: user.perfil,
       esteira: "geral",
       equipeId: user.equipeId,
@@ -121,6 +129,30 @@ export function AccessManagementPanel({ usuarios, equipes, canManage, loadError 
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function syncTeamsFromBitrix() {
+    if (!canSyncBitrix) {
+      setError("Configure SUPABASE_SECRET_KEY e BITRIX24_BASE_URL para sincronizar as equipes.");
+      return;
+    }
+
+    startSyncTransition(async () => {
+      setError("");
+      setSaved(false);
+      setSyncNotice("");
+
+      const result = await sincronizarEquipesBitrix();
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+
+      const { summary } = result;
+      setSyncNotice(
+        `Equipes sincronizadas: ${summary.usuariosAtivos} ativos no Bitrix, ${summary.contasCriadas} conta${summary.contasCriadas === 1 ? "" : "s"} nova${summary.contasCriadas === 1 ? "" : "s"}, ${summary.desativados} desativado${summary.desativados === 1 ? "" : "s"}.`,
+      );
+      router.refresh();
+    });
+  }
   function toggleAccess(user: AcessoListItem) {
     if (!canManage) {
       setError("Configure SUPABASE_SECRET_KEY no servidor para alterar acessos.");
@@ -150,6 +182,16 @@ export function AccessManagementPanel({ usuarios, equipes, canManage, loadError 
         </div>
       ) : null}
 
+      {syncNotice ? (
+        <div className="success-banner" role="status">
+          <Check size={18} />
+          {syncNotice}
+          <button type="button" onClick={() => setSyncNotice("")} aria-label="Fechar aviso">
+            ×
+          </button>
+        </div>
+      ) : null}
+
       {!canManage ? (
         <p className="form-error access-config-warning" role="status">
           A gestão de acesso exige `SUPABASE_SECRET_KEY` no `.env.local` para criar, editar e desativar usuários no Supabase Auth.
@@ -169,7 +211,7 @@ export function AccessManagementPanel({ usuarios, equipes, canManage, loadError 
           </span>
           <div>
             <h2>{editingId ? "Editar acesso" : "Novo acesso"}</h2>
-            <p>Cria a conta no Supabase Auth e define visão, esteira e equipe. Senha mínima: 6 caracteres.</p>
+            <p>Cria a conta no Supabase Auth e define visão, esteira e equipe. Na edição, informe uma nova senha apenas se quiser alterá-la.</p>
           </div>
         </div>
 
@@ -189,19 +231,21 @@ export function AccessManagementPanel({ usuarios, equipes, canManage, loadError 
               />
             </div>
             <div className="field">
-              <label htmlFor="senha">{editingId ? "Senha de acesso" : "Senha temporária"}</label>
+              <label htmlFor="senha">{editingId ? "Nova senha" : "Senha temporária"}</label>
               <input
                 id="senha"
                 name="senha"
                 type="password"
                 value={form.senha}
                 onChange={(event) => updateField("senha", event.target.value)}
-                placeholder={editingId ? "Definida pelo ID do Bitrix" : "Mínimo 6 caracteres"}
+                placeholder={editingId ? "Deixe em branco para manter a atual" : "Mínimo 6 caracteres"}
                 autoComplete="new-password"
-                disabled={pending || Boolean(editingId && usuarios.find((user) => user.id === editingId)?.bitrixUserId)}
+                disabled={pending}
               />
-              {editingId && usuarios.find((user) => user.id === editingId)?.bitrixUserId ? (
-                <small className="field-hint">Senha automática: ID do Bitrix com zeros à esquerda até 6 dígitos.</small>
+              {editingId ? (
+                <small className="field-hint">
+                  Preencha somente se quiser redefinir a senha deste acesso. Mínimo de 6 caracteres.
+                </small>
               ) : null}
             </div>
           </div>
@@ -287,7 +331,7 @@ export function AccessManagementPanel({ usuarios, equipes, canManage, loadError 
         <div className="section-heading">
           <div>
             <h2>Acessos cadastrados</h2>
-            <p>Edite ou desative acessos existentes. Alterações de visão e equipe entram em vigor no próximo login.</p>
+            <p>Edite visão, equipe ou senha. Use a sincronização para refletir entradas e saídas das equipes no Bitrix24.</p>
           </div>
         </div>
 
@@ -298,6 +342,15 @@ export function AccessManagementPanel({ usuarios, equipes, canManage, loadError 
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por e-mail, nome ou equipe" />
           </label>
           <span className="toolbar-spacer" />
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={syncTeamsFromBitrix}
+            disabled={!canSyncBitrix || syncPending || pending}
+          >
+            <RefreshCw size={16} className={syncPending ? "spin" : undefined} />
+            {syncPending ? "Sincronizando..." : "Sincronizar equipes do Bitrix"}
+          </button>
           <span className="access-count">{filtered.length} acessos</span>
         </div>
 

@@ -3,12 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/require-admin";
-import { passwordFromBitrixId } from "@/lib/auth/bitrix-password";
+import { syncBitrixPeople, type BitrixPeopleSyncSummary } from "@/lib/bitrix/sync-people";
+import { hasBitrixEnv } from "@/lib/bitrix/client";
 import { editarAcessoSchema, novoAcessoSchema } from "@/lib/schemas/acesso";
+import { authErrorMessage } from "@/lib/supabase/auth-errors";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseSecretKey } from "@/lib/supabase/env";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
+type SyncActionResult = { ok: true; summary: BitrixPeopleSyncSummary } | { ok: false; error: string };
 
 function displayName(email: string) {
   const local = email.split("@")[0] ?? email;
@@ -21,17 +24,29 @@ function displayName(email: string) {
 
 function revalidateAcesso() {
   revalidatePath("/configuracoes/acesso");
+  revalidatePath("/dashboard");
+  revalidatePath("/roletas");
 }
 
-function authErrorMessage(message: string) {
-  const normalized = message.toLowerCase();
-  if (normalized.includes("invalid jwt") || normalized.includes("token is unverifiable") || normalized.includes("jwt kid")) {
-    return "Sua sessão de administração expirou. Saia, entre novamente e repita a operação.";
+export async function sincronizarEquipesBitrix(): Promise<SyncActionResult> {
+  await requireAdmin();
+
+  if (!hasSupabaseSecretKey()) {
+    return { ok: false, error: "SUPABASE_SECRET_KEY não configurada no servidor." };
   }
-  if (normalized.includes("password") && (normalized.includes("weak") || normalized.includes("least"))) {
-    return "A senha não atende aos requisitos de segurança configurados no Supabase.";
+
+  if (!hasBitrixEnv()) {
+    return { ok: false, error: "BITRIX24_BASE_URL não configurada no servidor." };
   }
-  return "Não foi possível atualizar o acesso no Supabase Auth.";
+
+  try {
+    const summary = await syncBitrixPeople();
+    revalidateAcesso();
+    return { ok: true, summary };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Não foi possível sincronizar as equipes.";
+    return { ok: false, error: authErrorMessage(message, message) };
+  }
 }
 
 export async function criarAcesso(input: unknown): Promise<ActionResult> {
@@ -62,7 +77,7 @@ export async function criarAcesso(input: unknown): Promise<ActionResult> {
     if (authError.message.toLowerCase().includes("already")) {
       return { ok: false, error: "Já existe um acesso com este e-mail." };
     }
-    return { ok: false, error: authError.message };
+    return { ok: false, error: authErrorMessage(authError.message, authError.message) };
   }
 
   const userId = authData.user.id;
@@ -103,17 +118,13 @@ export async function atualizarAcesso(input: unknown): Promise<ActionResult> {
 
   const { data: target, error: targetError } = await admin
     .from("usuarios")
-    .select("bitrix_user_id")
+    .select("id")
     .eq("id", payload.id)
     .single();
 
   if (targetError) {
     return { ok: false, error: targetError.message };
   }
-
-  const password = target.bitrix_user_id
-    ? passwordFromBitrixId(target.bitrix_user_id)
-    : payload.senha;
 
   const { error: profileError } = await admin
     .from("usuarios")
@@ -128,10 +139,11 @@ export async function atualizarAcesso(input: unknown): Promise<ActionResult> {
     return { ok: false, error: profileError.message };
   }
 
+  const novaSenha = payload.senha.trim();
   const authUpdate: { app_metadata: { perfil: typeof payload.perfil }; password?: string } = {
     app_metadata: { perfil: payload.perfil },
   };
-  if (password) authUpdate.password = password;
+  if (novaSenha) authUpdate.password = novaSenha;
 
   const { error: authError } = await admin.auth.admin.updateUserById(payload.id, authUpdate);
   if (authError) {

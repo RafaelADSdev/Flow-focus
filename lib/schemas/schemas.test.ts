@@ -45,6 +45,14 @@ describe("schemas compartilhados", () => {
       esteira: "geral",
       equipeId: null,
     }).success).toBe(true);
+
+    expect(editarAcessoSchema.safeParse({
+      id: "15b86593-affb-4c90-ba4c-8d2daf2ec97b",
+      senha: "nova-senha",
+      perfil: "admin",
+      esteira: "geral",
+      equipeId: null,
+    }).success).toBe(true);
   });
 
   it("mantem equipe obrigatoria para lideres e corretores", () => {

@@ -3,9 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowUpRight, Check, Clock3, LockKeyhole, RefreshCw, Sparkles } from "lucide-react";
+import { captarOportunidade } from "@/lib/actions/captura";
 import type { CarteiraData } from "@/lib/types/carteira";
-import { hasSupabaseEnv } from "@/lib/supabase/env";
-import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { StatusBadge } from "./status-badge";
 
@@ -33,16 +32,6 @@ const cycleLabels: Record<CarteiraData["estado_ciclo"], string> = {
   bloqueado: "Captação bloqueada",
 };
 
-function captureErrorMessage(code: string) {
-  switch (code) {
-    case "corretor_bloqueado": return "Sua captação está bloqueada. Aguarde a liberação da liderança.";
-    case "limite_diario_atingido": return "Você atingiu o limite diário de capturas.";
-    case "roleta_sem_oportunidades": return "Não há oportunidades disponíveis nesta roleta agora.";
-    case "roleta_nao_autorizada": return "Você não tem permissão para captar nesta roleta.";
-  }
-  return "Não foi possível captar a oportunidade. Tente novamente.";
-}
-
 export function BrokerPanel({ data }: { data: CarteiraData }) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -55,22 +44,16 @@ export function BrokerPanel({ data }: { data: CarteiraData }) {
   const progress = limite > 0 ? Math.min(100, (capturados / limite) * 100) : 0;
 
   async function capture(id: string) {
-    if (!hasSupabaseEnv()) {
-      setError("Configure o Supabase para captar oportunidades reais.");
-      return;
-    }
-
     setLoadingId(id);
     setMessage("");
     setError("");
 
-    const supabase = createClient();
-    const { error: captureError } = await supabase.rpc("captar_oportunidade", { p_roleta_id: id });
+    const result = await captarOportunidade({ roletaId: id });
 
     setLoadingId(null);
 
-    if (captureError) {
-      setError(captureErrorMessage(captureError.message));
+    if (!result.ok) {
+      setError(result.error);
       return;
     }
 

@@ -3,6 +3,7 @@ import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { AccessManagementPanel } from "@/components/access-management-panel";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { getAcessoManagementData } from "@/lib/data/acesso";
+import { hasBitrixEnv } from "@/lib/bitrix/client";
 import { hasSupabaseSecretKey } from "@/lib/supabase/env";
 
 export const metadata = { title: "Gestão de acesso" };
@@ -31,6 +32,7 @@ export default async function AccessManagementPage() {
         usuarios={data.usuarios}
         equipes={data.equipes}
         canManage={hasSupabaseSecretKey()}
+        canSyncBitrix={hasSupabaseSecretKey() && hasBitrixEnv()}
         loadError={data.loadError}
       />
     </div>

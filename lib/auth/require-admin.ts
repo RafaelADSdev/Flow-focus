@@ -3,6 +3,7 @@ import "server-only";
 import type { Route } from "next";
 import { redirect } from "next/navigation";
 import type { AppUser } from "@/lib/types/app-user";
+import { loadAuthProfile } from "@/lib/auth/load-auth-profile";
 import { createClient } from "@/lib/supabase/server";
 import { hasSupabaseEnv } from "@/lib/supabase/env";
 import { initials } from "@/lib/utils";
@@ -19,20 +20,15 @@ export async function requireAdmin(redirectTo: Route = "/configuracoes") {
     redirect("/login");
   }
 
-  const { data: profile, error } = await supabase
-    .from("usuarios")
-    .select("nome, perfil, equipe_nome, ativo")
-    .eq("id", authUser.id)
-    .maybeSingle();
-
-  if (error || !profile || profile.perfil !== "admin" || !profile.ativo) {
+  const profile = await loadAuthProfile(authUser);
+  if (!profile || profile.perfil !== "admin" || !profile.ativo) {
     redirect(redirectTo);
   }
 
   const user: AppUser = {
     nome: profile.nome,
     perfil: profile.perfil,
-    equipeNome: profile.equipe_nome,
+    equipeNome: profile.equipeNome,
     iniciais: initials(profile.nome),
   };
 
@@ -47,11 +43,6 @@ export async function isAdmin() {
   const authUser = authData.user;
   if (!authUser) return false;
 
-  const { data: profile } = await supabase
-    .from("usuarios")
-    .select("perfil, ativo")
-    .eq("id", authUser.id)
-    .maybeSingle();
-
+  const profile = await loadAuthProfile(authUser);
   return profile?.perfil === "admin" && profile.ativo === true;
 }

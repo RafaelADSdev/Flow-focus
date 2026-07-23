@@ -8,6 +8,7 @@ export type RoletasConfigCorretor = {
   id: string;
   nome: string;
   email: string;
+  equipeNome: string | null;
   roletas: string[];
   status: "liberado" | "auditoria" | "bloqueado";
 };
