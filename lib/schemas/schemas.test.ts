@@ -4,6 +4,7 @@ import { auditoriaSchema } from "./auditoria";
 import { bitrixWebhookSchema } from "./bitrix";
 import { editarAcessoSchema, novoAcessoSchema } from "./acesso";
 import { passwordFromBitrixId } from "../auth/bitrix-password";
+import { normalizePaginasAcesso } from "../auth/paginas-acesso";
 
 describe("schemas compartilhados", () => {
   it("aceita um login corporativo valido", () => {
@@ -36,6 +37,7 @@ describe("schemas compartilhados", () => {
       perfil: "corretor",
       esteira: "geral",
       equipeId,
+      paginasAcesso: ["/corretor"],
     }).success).toBe(true);
 
     expect(editarAcessoSchema.safeParse({
@@ -44,6 +46,7 @@ describe("schemas compartilhados", () => {
       perfil: "admin",
       esteira: "geral",
       equipeId: null,
+      paginasAcesso: ["/dashboard", "/configuracoes"],
     }).success).toBe(true);
 
     expect(editarAcessoSchema.safeParse({
@@ -52,6 +55,7 @@ describe("schemas compartilhados", () => {
       perfil: "admin",
       esteira: "geral",
       equipeId: null,
+      paginasAcesso: ["/dashboard", "/configuracoes"],
     }).success).toBe(true);
   });
 
@@ -62,6 +66,7 @@ describe("schemas compartilhados", () => {
       perfil: "lider",
       esteira: "geral",
       equipeId: null,
+      paginasAcesso: ["/roletas", "/comercial-geral", "/auditorias", "/dashboard"],
     });
 
     expect(result.success).toBe(false);
@@ -71,5 +76,12 @@ describe("schemas compartilhados", () => {
     expect(passwordFromBitrixId("1326")).toBe("001326");
     expect(passwordFromBitrixId("123456")).toBe("123456");
     expect(() => passwordFromBitrixId("13A6")).toThrow("ID do Bitrix inválido.");
+  });
+
+  it("inclui o Comercial Geral apenas nos conjuntos padrão antigos", () => {
+    expect(normalizePaginasAcesso("lider", ["/roletas", "/auditorias", "/dashboard"]))
+      .toContain("/comercial-geral");
+    expect(normalizePaginasAcesso("lider", ["/roletas", "/dashboard"]))
+      .not.toContain("/comercial-geral");
   });
 });

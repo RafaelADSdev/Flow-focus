@@ -30,6 +30,7 @@ export async function requireAdmin(redirectTo: Route = "/configuracoes") {
     perfil: profile.perfil,
     equipeNome: profile.equipeNome,
     iniciais: initials(profile.nome),
+    paginasAcesso: profile.paginasAcesso,
   };
 
   return user;

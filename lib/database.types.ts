@@ -8,8 +8,8 @@ export type Database = {
   public: {
     Tables: {
       usuarios: {
-        Row: { id: string; nome: string; email: string; perfil: PerfilUsuario; equipe_id: string | null; equipe_nome: string | null; bitrix_user_id: string | null; bitrix_department_id: string | null; ativo: boolean; criado_em: string; atualizado_em: string };
-        Insert: { id: string; nome: string; email: string; perfil?: PerfilUsuario; equipe_id?: string | null; equipe_nome?: string | null; bitrix_user_id?: string | null; bitrix_department_id?: string | null; ativo?: boolean };
+        Row: { id: string; nome: string; email: string; perfil: PerfilUsuario; equipe_id: string | null; equipe_nome: string | null; bitrix_user_id: string | null; bitrix_department_id: string | null; paginas_acesso: string[]; ativo: boolean; criado_em: string; atualizado_em: string };
+        Insert: { id: string; nome: string; email: string; perfil?: PerfilUsuario; equipe_id?: string | null; equipe_nome?: string | null; bitrix_user_id?: string | null; bitrix_department_id?: string | null; paginas_acesso?: string[]; ativo?: boolean };
         Update: Partial<Database["public"]["Tables"]["usuarios"]["Insert"]>;
         Relationships: [];
       };
@@ -27,7 +27,7 @@ export type Database = {
       };
       oportunidades: {
         Row: { id: string; bitrix_deal_id: string; roleta_id: string; corretor_id: string | null; status: StatusOportunidade; captada_em: string | null; ultima_atualizacao_bitrix: string | null; titulo: string | null; valor: number | null; roleta_atual: string | null; bitrix_stage_id: string | null; bitrix_assigned_by_id: string | null; data_criacao_bitrix: string | null; criado_em: string };
-        Insert: { id?: string; bitrix_deal_id: string; roleta_id: string; corretor_id?: string | null; status?: StatusOportunidade; titulo?: string | null; valor?: number | null; roleta_atual?: string | null; bitrix_stage_id?: string | null; bitrix_assigned_by_id?: string | null; data_criacao_bitrix?: string | null; ultima_atualizacao_bitrix?: string | null };
+        Insert: { id?: string; bitrix_deal_id: string; roleta_id: string; corretor_id?: string | null; status?: StatusOportunidade; captada_em?: string | null; titulo?: string | null; valor?: number | null; roleta_atual?: string | null; bitrix_stage_id?: string | null; bitrix_assigned_by_id?: string | null; data_criacao_bitrix?: string | null; ultima_atualizacao_bitrix?: string | null };
         Update: Partial<Database["public"]["Tables"]["oportunidades"]["Insert"]>;
         Relationships: [];
       };

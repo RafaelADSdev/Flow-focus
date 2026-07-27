@@ -15,6 +15,7 @@ const secretKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUP
 const webhookSecret = Deno.env.get("BITRIX24_WEBHOOK_SECRET") ?? "";
 const bitrixBaseUrl = (Deno.env.get("BITRIX24_BASE_URL") ?? "").replace(/\/$/, "");
 const categoryId = Deno.env.get("BITRIX24_FILTER_CATEGORY_ID") ?? "36";
+const captureCategoryId = Deno.env.get("BITRIX24_CAPTURE_CATEGORY_ID") ?? "16";
 const stageId = Deno.env.get("BITRIX24_FILTER_STAGE_ID") ?? "C36:NEW";
 const rouletteField = Deno.env.get("BITRIX24_ROULETTE_FIELD") ?? "UF_CRM_1726667595972";
 const rouletteTag = Deno.env.get("BITRIX24_ROULETTE_TAG") ?? Deno.env.get("BITRIX24_ROULETTE_SUFFIX") ?? "Focus";
@@ -65,11 +66,20 @@ async function bitrixCall<T>(method: string, params?: URLSearchParams) {
   if (!bitrixBaseUrl) throw new Error("BITRIX24_BASE_URL ausente");
   const url = new URL(`${bitrixBaseUrl}/${method}.json`);
   params?.forEach((value, key) => url.searchParams.append(key, value));
-  const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error(`Bitrix respondeu HTTP ${response.status}`);
-  const body = await response.json() as { result?: T; error?: string; error_description?: string; total?: number; next?: number };
-  if (body.error || body.result === undefined) throw new Error(body.error_description ?? body.error ?? "Resposta inválida do Bitrix");
-  return body;
+
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    if (response.status === 429 && attempt < 6) {
+      await new Promise((resolve) => setTimeout(resolve, 1_500 * attempt));
+      continue;
+    }
+    if (!response.ok) throw new Error(`Bitrix respondeu HTTP ${response.status}`);
+    const body = await response.json() as { result?: T; error?: string; error_description?: string; total?: number; next?: number };
+    if (body.error || body.result === undefined) throw new Error(body.error_description ?? body.error ?? "Resposta inválida do Bitrix");
+    return body;
+  }
+
+  throw new Error("Bitrix respondeu HTTP 429");
 }
 
 async function loadDeal(payload: Payload) {
@@ -372,6 +382,162 @@ async function synchronizeEligibleDeals() {
   return { encontrados: total, importados: eligible.length, ignorados: deals.length - eligible.length, roletas: 1 };
 }
 
+function listComercialGeralMonthPeriods(year = Number(Deno.env.get("YEAR") ?? new Date().getFullYear())) {
+  const now = new Date();
+  const lastMonth = year === now.getFullYear() ? now.getMonth() : 11;
+  return Array.from({ length: lastMonth + 1 }, (_, month) => {
+    const from = new Date(year, month, 1, 0, 0, 0);
+    const to = year === now.getFullYear() && month === now.getMonth()
+      ? now
+      : new Date(year, month + 1, 0, 23, 59, 59);
+    return {
+      label: `${year}-${String(month + 1).padStart(2, "0")}`,
+      dateFrom: from.toISOString().slice(0, 19),
+      dateTo: to.toISOString().slice(0, 19),
+    };
+  });
+}
+
+function isComercialGeralFocus(deal: JsonRecord) {
+  return String(deal.CATEGORY_ID ?? "") === captureCategoryId
+    && rouletteValue(deal).toLocaleLowerCase().includes(rouletteTag.toLocaleLowerCase());
+}
+
+function stageWithSemantic(deal: JsonRecord) {
+  const stage = String(deal.STAGE_ID ?? "").trim();
+  const semantic = String(deal.STAGE_SEMANTIC_ID ?? "").trim().toUpperCase();
+  if (!stage) return semantic ? `#${semantic}` : null;
+  if (!semantic) return stage;
+  return `${stage}#${semantic}`;
+}
+
+async function fetchComercialGeralPage(start: number, dateFrom: string, dateTo: string) {
+  const params = new URLSearchParams({
+    "filter[CATEGORY_ID]": captureCategoryId,
+    [`filter[=%${rouletteField}]`]: `%${rouletteTag}%`,
+    "filter[>=DATE_CREATE]": dateFrom,
+    "filter[<=DATE_CREATE]": dateTo,
+    start: String(start),
+  });
+  dealFields.forEach((field) => params.append("select[]", field));
+  return bitrixCall<JsonRecord[]>("crm.deal.list", params);
+}
+
+async function fetchComercialGeralMonthDeals(period: { dateFrom: string; dateTo: string }) {
+  const first = await fetchComercialGeralPage(0, period.dateFrom, period.dateTo);
+  const total = first.total ?? first.result!.length;
+  const starts = Array.from({ length: Math.max(0, Math.ceil(total / 50) - 1) }, (_, index) => (index + 1) * 50);
+  const deals = [...first.result!];
+  for (const start of starts) {
+    const page = await fetchComercialGeralPage(start, period.dateFrom, period.dateTo);
+    deals.push(...page.result!);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return { total, deals };
+}
+
+async function synchronizeComercialGeralDeals() {
+  const year = Number(Deno.env.get("YEAR") ?? new Date().getFullYear());
+  const months = listComercialGeralMonthPeriods(year);
+  const funilId = `${captureCategoryId}:*:${rouletteTag.toLocaleLowerCase()}:dashboard`;
+  const { data: roulette, error: rouletteError } = await supabase.from("roletas").upsert({
+    nome: "Comercial Geral · Focus",
+    bitrix_funil_id: funilId,
+    bitrix_category_id: String(captureCategoryId),
+    bitrix_roleta_valor: rouletteTag,
+    descricao: `Histórico Focus da category ${captureCategoryId} para Visão geral (${year})`,
+    ativa: true,
+  }, { onConflict: "bitrix_funil_id" }).select("id").single();
+  if (rouletteError) throw rouletteError;
+
+  const { data: usuarios, error: usuariosError } = await supabase
+    .from("usuarios")
+    .select("id, bitrix_user_id")
+    .not("bitrix_user_id", "is", null);
+  if (usuariosError) throw usuariosError;
+
+  const corretorByBitrixId = new Map(
+    (usuarios ?? []).map((usuario) => [String(usuario.bitrix_user_id), usuario.id]),
+  );
+
+  let encontrados = 0;
+  let baixados = 0;
+  let elegiveis = 0;
+  let importados = 0;
+  let comCorretor = 0;
+
+  for (const period of months) {
+    const monthResult = await fetchComercialGeralMonthDeals(period);
+    encontrados += monthResult.total;
+    baixados += monthResult.deals.length;
+    const eligible = monthResult.deals.filter(isComercialGeralFocus);
+    elegiveis += eligible.length;
+    if (!eligible.length) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      continue;
+    }
+
+    const dealIds = eligible.map((deal) => String(deal.ID));
+    const existingRows = (await Promise.all(chunks(dealIds, 300).map(async (ids) => {
+      const { data, error } = await supabase
+        .from("oportunidades")
+        .select("bitrix_deal_id, roleta_id, corretor_id, captada_em")
+        .in("bitrix_deal_id", ids);
+      if (error) throw error;
+      return data ?? [];
+    }))).flat();
+    const existingByDeal = new Map(existingRows.map((row) => [row.bitrix_deal_id, row]));
+
+    const opportunities = eligible.map((deal) => {
+      const dealId = String(deal.ID);
+      const existing = existingByDeal.get(dealId);
+      const assigned = String(deal.ASSIGNED_BY_ID ?? "") || null;
+      const mappedCorretor = assigned ? corretorByBitrixId.get(assigned) ?? null : null;
+      const corretorId = existing?.corretor_id ?? mappedCorretor;
+      const dateCreate = String(deal.DATE_CREATE ?? "") || null;
+      const captadaEm = existing?.captada_em ?? (corretorId && dateCreate ? dateCreate : null);
+      if (corretorId) comCorretor += 1;
+
+      return {
+        bitrix_deal_id: dealId,
+        roleta_id: existing?.roleta_id ?? roulette.id,
+        titulo: String(deal.TITLE ?? `Negócio #${dealId}`),
+        valor: Number(deal.OPPORTUNITY ?? 0) || 0,
+        roleta_atual: rouletteValue(deal) || null,
+        bitrix_stage_id: stageWithSemantic(deal),
+        bitrix_assigned_by_id: assigned,
+        data_criacao_bitrix: dateCreate,
+        ultima_atualizacao_bitrix: String(deal.DATE_MODIFY ?? dateCreate ?? new Date().toISOString()),
+        corretor_id: corretorId,
+        captada_em: captadaEm,
+      };
+    });
+
+    await Promise.all(chunks(opportunities, 200).map(async (batch) => {
+      const { error } = await supabase.from("oportunidades").upsert(batch, { onConflict: "bitrix_deal_id" });
+      if (error) throw error;
+      importados += batch.length;
+    }));
+
+    await new Promise((resolve) => setTimeout(resolve, 800));
+  }
+
+  const dateFrom = months[0]?.dateFrom ?? "";
+  const dateTo = months[months.length - 1]?.dateTo ?? "";
+
+  return {
+    categoryId: captureCategoryId,
+    periodo: { de: dateFrom, ate: dateTo },
+    meses: months.length,
+    encontrados,
+    baixados,
+    elegiveis,
+    importados,
+    com_corretor: comCorretor,
+    roleta_id: roulette.id,
+  };
+}
+
 Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "metodo_nao_permitido" }, 405);
   if (!supabaseUrl || !secretKey || !webhookSecret || !bitrixBaseUrl) return json({ error: "funcao_nao_configurada" }, 503);
@@ -397,10 +563,12 @@ Deno.serve(async (request) => {
       const value = JSON.parse(raw) as JsonRecord;
       if (value.action === "sync") return json({ ok: true, ...(await synchronizeEligibleDeals()) });
       if (value.action === "sync_people") return json({ ok: true, ...(await synchronizeTeamsAndUsers()) });
+      if (value.action === "sync_comercial_geral") return json({ ok: true, ...(await synchronizeComercialGeralDeals()) });
       if (value.action === "sync_all") return json({
         ok: true,
         pessoas: await synchronizeTeamsAndUsers(),
         oportunidades: await synchronizeEligibleDeals(),
+        comercial_geral: await synchronizeComercialGeralDeals(),
       });
     }
 

@@ -2,6 +2,11 @@ import "server-only";
 
 import type { User } from "@supabase/supabase-js";
 import type { PerfilUsuario } from "@/lib/database.types";
+import {
+  defaultPaginasForPerfil,
+  normalizePaginasAcesso,
+  type PaginaAcesso,
+} from "@/lib/auth/paginas-acesso";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasSupabaseSecretKey } from "@/lib/supabase/env";
@@ -12,6 +17,7 @@ export type LoadedAuthProfile = {
   perfil: PerfilUsuario;
   equipeId: string | null;
   equipeNome: string | null;
+  paginasAcesso: PaginaAcesso[];
   ativo: boolean;
 };
 
@@ -23,22 +29,38 @@ function nomeFromAuth(authUser: User): string {
   );
 }
 
-async function readUsuarioProfile(authUser: User) {
-  if (hasSupabaseSecretKey()) {
-    const admin = createAdminClient();
-    return admin
-      .from("usuarios")
-      .select("nome, perfil, equipe_id, equipe_nome, ativo")
-      .eq("id", authUser.id)
-      .maybeSingle();
+type UsuarioProfileRow = {
+  nome: string;
+  perfil: PerfilUsuario | null;
+  equipe_id: string | null;
+  equipe_nome: string | null;
+  paginas_acesso?: string[] | null;
+  ativo: boolean;
+};
+
+async function readUsuarioProfile(authUser: User): Promise<{ data: UsuarioProfileRow | null; error: { message?: string } | null }> {
+  async function query(select: string) {
+    if (hasSupabaseSecretKey()) {
+      const admin = createAdminClient();
+      return admin.from("usuarios").select(select).eq("id", authUser.id).maybeSingle();
+    }
+    const supabase = await createClient();
+    return supabase.from("usuarios").select(select).eq("id", authUser.id).maybeSingle();
   }
 
-  const supabase = await createClient();
-  return supabase
-    .from("usuarios")
-    .select("nome, perfil, equipe_id, equipe_nome, ativo")
-    .eq("id", authUser.id)
-    .maybeSingle();
+  const withPages = await query("nome, perfil, equipe_id, equipe_nome, paginas_acesso, ativo");
+  if (withPages.error?.message?.includes("paginas_acesso")) {
+    const fallback = await query("nome, perfil, equipe_id, equipe_nome, ativo");
+    return {
+      data: (fallback.data as UsuarioProfileRow | null) ?? null,
+      error: fallback.error,
+    };
+  }
+
+  return {
+    data: (withPages.data as UsuarioProfileRow | null) ?? null,
+    error: withPages.error,
+  };
 }
 
 export async function loadAuthProfile(authUser: User): Promise<LoadedAuthProfile | null> {
@@ -48,11 +70,13 @@ export async function loadAuthProfile(authUser: User): Promise<LoadedAuthProfile
   if (!error && profile) {
     if (!profile.ativo) return null;
 
+    const perfil = profile.perfil ?? perfilFromAuth;
     return {
       nome: profile.nome,
-      perfil: profile.perfil ?? perfilFromAuth,
+      perfil,
       equipeId: profile.equipe_id,
       equipeNome: profile.equipe_nome,
+      paginasAcesso: normalizePaginasAcesso(perfil, profile.paginas_acesso),
       ativo: profile.ativo,
     };
   }
@@ -63,6 +87,7 @@ export async function loadAuthProfile(authUser: User): Promise<LoadedAuthProfile
       perfil: perfilFromAuth,
       equipeId: null,
       equipeNome: null,
+      paginasAcesso: defaultPaginasForPerfil(perfilFromAuth),
       ativo: true,
     };
   }

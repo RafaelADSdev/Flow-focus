@@ -16,10 +16,10 @@ export function BrandMark({ compact = false, variant = "on-dark", className = ""
   const toneClass = variant === "on-dark" ? "brand-logo-on-dark" : "brand-logo-on-light";
 
   return (
-    <div className={`brand${compact ? " brand-compact" : ""}${className ? ` ${className}` : ""}`} aria-label="Flow Focus">
+    <div className={`brand${compact ? " brand-compact" : ""}${className ? ` ${className}` : ""}`}>
       <Image
         src={sources[variant]}
-        alt=""
+        alt="Flow Focus"
         width={compact ? 62 : variant === "on-light" ? 104 : 72}
         height={compact ? 34 : variant === "on-light" ? 58 : 38}
         className={`brand-logo ${toneClass}`}

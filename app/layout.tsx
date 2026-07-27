@@ -3,7 +3,10 @@ import "./globals.css";
 import { QueryProvider } from "@/components/query-provider";
 import { plusJakartaSans } from "@/lib/fonts";
 
-export const metadata: Metadata = { title: { default: "Flow Focus", template: "%s · Flow Focus" }, description: "Distribuição inteligente e auditável de oportunidades comerciais." };
+export const metadata: Metadata = {
+  title: { default: "Flow Focus", template: "%s · Flow Focus" },
+  description: "Distribuição inteligente e auditável de oportunidades comerciais.",
+};
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (

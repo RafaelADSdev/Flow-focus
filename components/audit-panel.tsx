@@ -3,10 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Check, CheckCircle2, ChevronLeft, Clock3, ExternalLink, MessageSquareText, RefreshCw, ShieldAlert, X } from "lucide-react";
+import { concluirAuditoriaAction } from "@/lib/actions/auditorias";
 import type { AuditoriaFilaItem, AuditoriasPainelData } from "@/lib/types/auditorias";
 import { formatEspera, formatTempoMedio, formatUltimaCaptura } from "@/lib/auditorias/format";
-import { hasSupabaseEnv } from "@/lib/supabase/env";
-import { createClient } from "@/lib/supabase/client";
 import { formatDate, initials } from "@/lib/utils";
 
 const criteria = [
@@ -61,27 +60,22 @@ export function AuditPanel({ data }: { data: AuditoriasPainelData }) {
 
   async function conclude(approved: boolean) {
     if (!selected) return;
-    if (!hasSupabaseEnv()) {
-      setError("Configure o Supabase para concluir auditorias reais.");
-      return;
-    }
 
     setPending(true);
     setError("");
 
-    const supabase = createClient();
     const criterios = criteria.map((item) => ({ id: item.id, atendido: Boolean(checked[item.id]) }));
-    const { error: rpcError } = await supabase.rpc("concluir_auditoria", {
-      p_auditoria_id: selected.id,
-      p_status: approved ? "aprovado" : "reprovado",
-      p_observacoes: notes,
-      p_criterios: criterios,
+    const result = await concluirAuditoriaAction({
+      auditoriaId: selected.id,
+      approved,
+      observacoes: notes,
+      criterios,
     });
 
     setPending(false);
 
-    if (rpcError) {
-      setError("Não foi possível concluir a auditoria. Tente novamente.");
+    if (!result.ok) {
+      setError(result.error);
       return;
     }
 
@@ -110,7 +104,7 @@ export function AuditPanel({ data }: { data: AuditoriasPainelData }) {
         <div className="section-heading">
           <div>
             <h2>Fila de auditoria</h2>
-            <p>Prioridade ordenada pelo maior tempo de espera.</p>
+            <p>Prioridade pelo tempo de espera. A carteira entra na fila já na primeira captura do dia.</p>
           </div>
           <span className="sync-label"><RefreshCw size={14} />Sincronizado {formatDate(data.gerado_em)}</span>
         </div>
@@ -139,7 +133,7 @@ export function AuditPanel({ data }: { data: AuditoriasPainelData }) {
           <div className="empty-state">
             <CheckCircle2 size={28} />
             <h2>Fila em dia</h2>
-            <p>Não há carteiras aguardando auditoria neste momento.</p>
+            <p>Não há carteiras em captura hoje. Assim que um corretor captar a primeira oportunidade, ela aparece aqui.</p>
           </div>
         )}
       </section>

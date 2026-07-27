@@ -7,3 +7,5 @@ coverage
 .vercel
 .netlify
 tmp/
+
+.vercel

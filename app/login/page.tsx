@@ -1,9 +1,41 @@
-import { ShieldCheck } from "lucide-react";
-import { BrandMark } from "@/components/brand-mark";
+import { LoginBrandLockup } from "@/components/login-brand-lockup";
 import { LoginForm } from "@/components/login-form";
+import { LoginOrbit } from "@/components/login-orbit";
 
 export const metadata = { title: "Entrar" };
 
+const CYCLE = ["Captar", "Trabalhar", "Auditar", "Liberar"] as const;
+
 export default function LoginPage() {
-  return <main className="login-page"><section className="login-panel"><BrandMark variant="on-light"/><div className="login-copy"><span className="login-tag"><ShieldCheck size={15}/>Acesso seguro da Diretoria Focus</span><h1>Oportunidades em movimento. Operação sob controle.</h1><p>Acesse suas roletas, acompanhe carteiras e mantenha o ciclo comercial fluindo.</p></div><LoginForm/><footer>Flow Focus · Integrado ao Bitrix24</footer></section><aside className="login-aside" aria-label="Resumo do fluxo operacional"><div className="aside-orbit"><span className="orbit-core"><i/><i/><i/></span><span className="orbit-label label-one">Captar</span><span className="orbit-label label-two">Trabalhar</span><span className="orbit-label label-three">Auditar</span><span className="orbit-label label-four">Liberar</span></div><blockquote>“Cada oportunidade tem dono, próximo passo e histórico.”</blockquote><p>Uma rotina comercial mais organizada, equilibrada e rastreável.</p></aside></main>;
+  return (
+    <main className="login-page">
+      <section className="login-panel">
+        <LoginBrandLockup />
+        <div className="login-copy">
+          <p className="login-kicker">Diretoria Focus</p>
+          <h1>Entre na operação</h1>
+          <p>Roletas, carteiras e auditoria — Bitrix24 permanece o CRM.</p>
+        </div>
+        <div className="login-mobile-authority">
+          <ol className="login-cycle-strip" aria-label="Ciclo operacional">
+            {CYCLE.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          <blockquote cite="Flow Focus">
+            “Cada oportunidade tem dono, próximo passo e histórico.”
+          </blockquote>
+        </div>
+        <LoginForm />
+        <footer>Flow Focus · HubOn · Integrado ao Bitrix24</footer>
+      </section>
+      <aside className="login-aside" aria-label="Resumo do fluxo operacional">
+        <LoginOrbit />
+        <blockquote cite="Flow Focus">
+          “Cada oportunidade tem dono, próximo passo e histórico.”
+        </blockquote>
+        <p>Uma rotina comercial mais organizada, equilibrada e rastreável.</p>
+      </aside>
+    </main>
+  );
 }

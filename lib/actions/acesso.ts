@@ -81,7 +81,7 @@ export async function criarAcesso(input: unknown): Promise<ActionResult> {
   }
 
   const userId = authData.user.id;
-  const { error: profileError } = await admin
+  let { error: profileError } = await admin
     .from("usuarios")
     .upsert({
       id: userId,
@@ -89,8 +89,22 @@ export async function criarAcesso(input: unknown): Promise<ActionResult> {
       email: payload.email,
       perfil: payload.perfil,
       equipe_id: payload.equipeId,
+      paginas_acesso: payload.paginasAcesso,
       ativo: true,
     }, { onConflict: "id" });
+
+  if (profileError?.message?.includes("paginas_acesso")) {
+    ({ error: profileError } = await admin
+      .from("usuarios")
+      .upsert({
+        id: userId,
+        nome,
+        email: payload.email,
+        perfil: payload.perfil,
+        equipe_id: payload.equipeId,
+        ativo: true,
+      }, { onConflict: "id" }));
+  }
 
   if (profileError) {
     await admin.auth.admin.deleteUser(userId);
@@ -126,14 +140,26 @@ export async function atualizarAcesso(input: unknown): Promise<ActionResult> {
     return { ok: false, error: targetError.message };
   }
 
-  const { error: profileError } = await admin
+  let { error: profileError } = await admin
     .from("usuarios")
     .update({
       perfil: payload.perfil,
       equipe_id: payload.equipeId,
+      paginas_acesso: payload.paginasAcesso,
       ativo: true,
     })
     .eq("id", payload.id);
+
+  if (profileError?.message?.includes("paginas_acesso")) {
+    ({ error: profileError } = await admin
+      .from("usuarios")
+      .update({
+        perfil: payload.perfil,
+        equipe_id: payload.equipeId,
+        ativo: true,
+      })
+      .eq("id", payload.id));
+  }
 
   if (profileError) {
     return { ok: false, error: profileError.message };

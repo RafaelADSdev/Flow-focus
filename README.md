@@ -139,7 +139,14 @@ curl -X POST https://SEU_PROJECT_REF.supabase.co/functions/v1/bitrix-webhook \
   --data '{"action":"sync_people"}'
 ```
 
-A carga valida a hierarquia ate a superintendencia Jordao (`444`), cria as contas no Supabase Auth sem senha e sem enviar convites, e associa os responsaveis dos departamentos como lideres. Os demais usuarios ativos entram como corretores. Use `{"action":"sync_all"}` para sincronizar pessoas e oportunidades na mesma chamada. A ativacao do acesso pode ser feita posteriormente por magic link, recuperacao de senha ou convite explicito.
+A carga valida a hierarquia ate a superintendencia Jordao (`444`), cria as contas no Supabase Auth sem senha e sem enviar convites, e associa os responsaveis dos departamentos como lideres. Os demais usuarios ativos entram como corretores. Use `{"action":"sync_all"}` para sincronizar pessoas, o bolsão e o histórico do Comercial Geral (ano corrente) na mesma chamada. Para só o Comercial Geral: `{"action":"sync_comercial_geral"}`. A ativacao do acesso pode ser feita posteriormente por magic link, recuperacao de senha ou convite explicito.
+
+Para carga local via CLI (ano inteiro, com vínculo de corretor pelo responsável no Bitrix):
+
+```bash
+node scripts/sync-bitrix-comercial-geral-focus.mjs
+# ou YEAR=2025 node scripts/sync-bitrix-comercial-geral-focus.mjs
+```
 
 `usuarios.equipe_id` preserva a chave estrangeira, enquanto `usuarios.equipe_nome` mostra diretamente o nome legivel da equipe. Triggers mantem os dois campos consistentes e propagam futuras alteracoes no nome da equipe.
 

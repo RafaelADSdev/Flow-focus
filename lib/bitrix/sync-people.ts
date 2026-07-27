@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { User } from "@supabase/supabase-js";
+import { defaultPaginasForPerfil } from "@/lib/auth/paginas-acesso";
 import { bitrixCall, bitrixCallPage, hasBitrixEnv } from "@/lib/bitrix/client";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -144,6 +145,15 @@ export async function syncBitrixPeople(): Promise<BitrixPeopleSyncSummary> {
         ? String(authUser.app_metadata.perfil)
         : profile;
 
+      const typedProfile = effectiveProfile as "corretor" | "lider" | "diretora" | "admin";
+      const { data: existingUsuario } = await admin
+        .from("usuarios")
+        .select("paginas_acesso")
+        .eq("id", authUser.id)
+        .maybeSingle();
+
+      const hasCustomPages = Array.isArray(existingUsuario?.paginas_acesso) && existingUsuario.paginas_acesso.length > 0;
+
       const usuarioRow = {
         id: authUser.id,
         nome: name,
@@ -153,15 +163,17 @@ export async function syncBitrixPeople(): Promise<BitrixPeopleSyncSummary> {
         bitrix_user_id: bitrixUserId,
         bitrix_department_id: group.departmentId,
         ativo: true,
+        ...(hasCustomPages ? {} : { paginas_acesso: defaultPaginasForPerfil(typedProfile) }),
       };
 
       let { error: userError } = await admin.from("usuarios").upsert({
         ...usuarioRow,
-        perfil: effectiveProfile as "corretor" | "lider" | "diretora" | "admin",
+        perfil: typedProfile,
       }, { onConflict: "id" });
 
-      if (userError?.message?.includes("perfil")) {
-        ({ error: userError } = await admin.from("usuarios").upsert(usuarioRow, { onConflict: "id" }));
+      if (userError?.message?.includes("perfil") || userError?.message?.includes("paginas_acesso")) {
+        const { paginas_acesso: _pages, ...withoutPages } = usuarioRow;
+        ({ error: userError } = await admin.from("usuarios").upsert(withoutPages, { onConflict: "id" }));
       }
       if (userError) throw userError;
 

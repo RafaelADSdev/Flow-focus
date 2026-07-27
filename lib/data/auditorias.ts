@@ -32,6 +32,27 @@ const painelSchema = z.object({
   gerado_em: z.string(),
 });
 
+type AuditoriaRow = {
+  id: string;
+  corretor_id: string;
+  status?: string | null;
+  data: string;
+  concluida_em: string | null;
+};
+
+type UsuarioRow = {
+  id: string;
+  nome: string;
+  equipe_id: string | null;
+  equipe_nome: string | null;
+  ativo: boolean;
+  perfil: string | null;
+};
+
+function isMissingColumn(error: { message?: string } | null | undefined, column: string) {
+  return Boolean(error?.message?.includes(column));
+}
+
 export function getEmptyAuditoriasPainel(): AuditoriasPainelData {
   return {
     aguardando: 0,
@@ -63,34 +84,175 @@ function startOfWeek(date = new Date()) {
   return copy;
 }
 
+function isPendente(auditoria: AuditoriaRow) {
+  if (auditoria.status) return auditoria.status === "pendente";
+  return !auditoria.concluida_em;
+}
+
+function isAprovado(auditoria: AuditoriaRow) {
+  if (auditoria.status) return auditoria.status === "aprovado";
+  return Boolean(auditoria.concluida_em);
+}
+
+async function listAuditorias(admin: ReturnType<typeof createAdminClient>) {
+  const withStatus = await admin
+    .from("auditorias")
+    .select("id, corretor_id, status, data, concluida_em");
+
+  if (isMissingColumn(withStatus.error, "status")) {
+    const fallback = await admin
+      .from("auditorias")
+      .select("id, corretor_id, data, concluida_em");
+    if (fallback.error) throw new Error(fallback.error.message);
+    return (fallback.data ?? []) as AuditoriaRow[];
+  }
+
+  if (withStatus.error) throw new Error(withStatus.error.message);
+  return (withStatus.data ?? []) as AuditoriaRow[];
+}
+
+async function listOportunidadesResumo(admin: ReturnType<typeof createAdminClient>) {
+  const withStatus = await admin
+    .from("oportunidades")
+    .select("corretor_id, captada_em, status, ultima_atualizacao_bitrix");
+
+  if (isMissingColumn(withStatus.error, "status")) {
+    const fallback = await admin
+      .from("oportunidades")
+      .select("corretor_id, captada_em, ultima_atualizacao_bitrix");
+    if (fallback.error) throw new Error(fallback.error.message);
+    return fallback.data ?? [];
+  }
+
+  if (withStatus.error) throw new Error(withStatus.error.message);
+  return withStatus.data ?? [];
+}
+
+function oportunidadeAtualizada(oportunidade: {
+  captada_em: string | null;
+  status?: string | null;
+  ultima_atualizacao_bitrix?: string | null;
+}) {
+  if (oportunidade.status && ["em_trabalho", "convertida", "perdida"].includes(oportunidade.status)) {
+    return true;
+  }
+  if (!oportunidade.captada_em || !oportunidade.ultima_atualizacao_bitrix) return false;
+  return oportunidade.ultima_atualizacao_bitrix > oportunidade.captada_em;
+}
+
+async function resolveLiderId(
+  admin: ReturnType<typeof createAdminClient>,
+  equipeId: string | null,
+  fallbackUserId: string,
+) {
+  if (equipeId) {
+    const { data: equipe } = await admin.from("equipes").select("lider_id").eq("id", equipeId).maybeSingle();
+    if (equipe?.lider_id) return equipe.lider_id;
+  }
+
+  const { data: adminUser } = await admin
+    .from("usuarios")
+    .select("id")
+    .eq("perfil", "admin")
+    .eq("ativo", true)
+    .order("nome")
+    .limit(1)
+    .maybeSingle();
+
+  return adminUser?.id ?? fallbackUserId;
+}
+
+export async function ensurePendingAuditoriaForCorretor(
+  admin: ReturnType<typeof createAdminClient>,
+  corretorId: string,
+) {
+  const existing = await listAuditorias(admin);
+  if (existing.some((item) => item.corretor_id === corretorId && isPendente(item))) {
+    return;
+  }
+
+  const { data: usuario, error: usuarioError } = await admin
+    .from("usuarios")
+    .select("id, equipe_id")
+    .eq("id", corretorId)
+    .maybeSingle();
+  if (usuarioError || !usuario) return;
+
+  const liderId = await resolveLiderId(admin, usuario.equipe_id, corretorId);
+  const payload = {
+    corretor_id: corretorId,
+    lider_id: liderId,
+    data: new Date().toISOString(),
+    observacoes: null,
+    criterios_avaliados: [],
+  };
+
+  let { error } = await admin.from("auditorias").insert({ ...payload, status: "pendente" } as never);
+  if (isMissingColumn(error, "status")) {
+    ({ error } = await admin.from("auditorias").insert(payload as never));
+  }
+  if (error && !error.message.toLowerCase().includes("duplicate")) {
+    throw new Error(error.message);
+  }
+}
+
+async function ensurePendingAuditoriasFromCapturas(admin: ReturnType<typeof createAdminClient>) {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: capturas, error } = await admin
+    .from("capturas_diarias")
+    .select("corretor_id, quantidade_captada")
+    .eq("data", today);
+  if (error) throw new Error(error.message);
+
+  const emAndamento = (capturas ?? []).filter((item) => (item.quantidade_captada ?? 0) > 0);
+
+  for (const item of emAndamento) {
+    await ensurePendingAuditoriaForCorretor(admin, item.corretor_id);
+  }
+}
+
 async function loadAuditoriasFromTables(viewer: ViewerContext): Promise<AuditoriasPainelData> {
   const admin = createAdminClient();
+  await ensurePendingAuditoriasFromCapturas(admin);
+
   const inicioSemana = startOfWeek().toISOString();
   const inicioSemanaAnterior = new Date(startOfWeek());
   inicioSemanaAnterior.setDate(inicioSemanaAnterior.getDate() - 7);
   const inicioSemanaAnteriorIso = inicioSemanaAnterior.toISOString();
   const hoje = new Date().toISOString().slice(0, 10);
 
-  const [usuariosResult, auditoriasResult, bloqueiosResult, capturasResult, oportunidadesResult] = await Promise.all([
+  const [usuariosResult, bloqueiosResult, capturasResult, auditorias] = await Promise.all([
     admin.from("usuarios").select("id, nome, equipe_id, equipe_nome, ativo, perfil").eq("ativo", true),
-    admin.from("auditorias").select("id, corretor_id, status, data, concluida_em"),
     admin.from("bloqueios").select("corretor_id").is("liberado_em", null),
     admin.from("capturas_diarias").select("corretor_id, quantidade_captada, data"),
-    admin.from("oportunidades").select("corretor_id, captada_em, status"),
+    listAuditorias(admin),
   ]);
 
+  if (usuariosResult.error) throw new Error(usuariosResult.error.message);
+  if (bloqueiosResult.error) throw new Error(bloqueiosResult.error.message);
+  if (capturasResult.error) throw new Error(capturasResult.error.message);
+
   const usuarios = new Map(
-    (usuariosResult.data ?? []).map((usuario) => [usuario.id, {
+    ((usuariosResult.data ?? []) as UsuarioRow[]).map((usuario) => [usuario.id, {
       ...usuario,
       perfil: usuario.perfil ?? "corretor",
     }]),
   );
 
-  const auditorias = (auditoriasResult.data ?? []).filter((auditoria) => {
+  const scopedAuditorias = auditorias.filter((auditoria) => {
     const usuario = usuarios.get(auditoria.corretor_id);
     return usuario && inViewerScope(viewer, usuario.equipe_id);
   });
 
+  const pendentes = scopedAuditorias.filter(isPendente);
+  const corretorIdsPendentes = [...new Set(pendentes.map((item) => item.corretor_id))];
+
+  if (corretorIdsPendentes.length) {
+    const { refreshCapturedDealsForCorretores } = await import("@/lib/bitrix/refresh-captured-deals");
+    await refreshCapturedDealsForCorretores(corretorIdsPendentes);
+  }
+
+  const oportunidades = await listOportunidadesResumo(admin);
   const bloqueados = new Set(
     (bloqueiosResult.data ?? [])
       .map((item) => item.corretor_id)
@@ -106,25 +268,29 @@ async function loadAuditoriasFromTables(viewer: ViewerContext): Promise<Auditori
       .map((item) => [item.corretor_id, item.quantidade_captada ?? 0]),
   );
 
-  const oportunidadesPorCorretor = new Map<string, { atualizados: number; ultimaCaptura: string | null }>();
-  for (const oportunidade of oportunidadesResult.data ?? []) {
-    if (!oportunidade.corretor_id) continue;
-    const atual = oportunidadesPorCorretor.get(oportunidade.corretor_id) ?? { atualizados: 0, ultimaCaptura: null };
-    if (oportunidade.captada_em?.slice(0, 10) === hoje && ["em_trabalho", "convertida", "perdida"].includes(oportunidade.status)) {
-      atual.atualizados += 1;
+  const oportunidadesPorCorretor = new Map<string, { atualizados: number; ultimaCaptura: string | null; capturadosHoje: number }>();
+  for (const oportunidade of oportunidades) {
+    if (!oportunidade.corretor_id || !oportunidade.captada_em) continue;
+    const atual = oportunidadesPorCorretor.get(oportunidade.corretor_id) ?? {
+      atualizados: 0,
+      ultimaCaptura: null,
+      capturadosHoje: 0,
+    };
+    if (oportunidade.captada_em.slice(0, 10) === hoje) {
+      atual.capturadosHoje += 1;
+      if (oportunidadeAtualizada(oportunidade)) atual.atualizados += 1;
     }
-    if (oportunidade.captada_em && (!atual.ultimaCaptura || oportunidade.captada_em > atual.ultimaCaptura)) {
+    if (!atual.ultimaCaptura || oportunidade.captada_em > atual.ultimaCaptura) {
       atual.ultimaCaptura = oportunidade.captada_em;
     }
     oportunidadesPorCorretor.set(oportunidade.corretor_id, atual);
   }
 
-  const pendentes = auditorias.filter((item) => item.status === "pendente");
-  const aprovadasSemana = auditorias.filter(
-    (item) => item.status === "aprovado" && item.concluida_em && item.concluida_em >= inicioSemana,
+  const aprovadasSemana = scopedAuditorias.filter(
+    (item) => isAprovado(item) && item.concluida_em && item.concluida_em >= inicioSemana,
   );
 
-  const tempoMedio = (items: typeof auditorias) => {
+  const tempoMedio = (items: AuditoriaRow[]) => {
     const concluidas = items.filter((item) => item.concluida_em);
     if (!concluidas.length) return 0;
     const total = concluidas.reduce((sum, item) => {
@@ -135,9 +301,9 @@ async function loadAuditoriasFromTables(viewer: ViewerContext): Promise<Auditori
     return Math.round((total / concluidas.length) * 10) / 10;
   };
 
-  const tempoAtual = tempoMedio(auditorias.filter((item) => item.concluida_em && item.concluida_em >= inicioSemana));
+  const tempoAtual = tempoMedio(scopedAuditorias.filter((item) => item.concluida_em && item.concluida_em >= inicioSemana));
   const tempoAnterior = tempoMedio(
-    auditorias.filter(
+    scopedAuditorias.filter(
       (item) => item.concluida_em
         && item.concluida_em >= inicioSemanaAnteriorIso
         && item.concluida_em < inicioSemana,
@@ -146,8 +312,14 @@ async function loadAuditoriasFromTables(viewer: ViewerContext): Promise<Auditori
 
   const fila = pendentes.map((auditoria) => {
     const usuario = usuarios.get(auditoria.corretor_id)!;
-    const capturados = capturasHoje.get(auditoria.corretor_id) ?? 0;
-    const resumo = oportunidadesPorCorretor.get(auditoria.corretor_id) ?? { atualizados: 0, ultimaCaptura: null };
+    const capturados = capturasHoje.get(auditoria.corretor_id)
+      ?? oportunidadesPorCorretor.get(auditoria.corretor_id)?.capturadosHoje
+      ?? 0;
+    const resumo = oportunidadesPorCorretor.get(auditoria.corretor_id) ?? {
+      atualizados: 0,
+      ultimaCaptura: null,
+      capturadosHoje: 0,
+    };
     const esperaMinutos = Math.max(Math.floor((Date.now() - new Date(auditoria.data).getTime()) / 60_000), 0);
     return {
       id: auditoria.id,
@@ -182,7 +354,12 @@ export async function getAuditoriasPainelData(): Promise<AuditoriasPainelData> {
   }
 
   if (hasSupabaseSecretKey() && viewer) {
-    return loadAuditoriasFromTables(viewer);
+    try {
+      return await loadAuditoriasFromTables(viewer);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "erro desconhecido";
+      throw new Error(`Não foi possível carregar as auditorias: ${message}`);
+    }
   }
 
   const supabase = await createClient();
@@ -192,7 +369,7 @@ export async function getAuditoriasPainelData(): Promise<AuditoriasPainelData> {
     return painelSchema.parse(data);
   }
 
-  if (shouldUseAdminFallback(error) && viewer) {
+  if (shouldUseAdminFallback(error) && viewer && hasSupabaseSecretKey()) {
     return loadAuditoriasFromTables(viewer);
   }
 

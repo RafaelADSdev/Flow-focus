@@ -1,2 +1,8 @@
 import { redirect } from "next/navigation";
-export default function Home() { redirect("/corretor"); }
+import { firstAllowedPath } from "@/lib/auth/paginas-acesso";
+import { getCurrentUser } from "@/lib/data/usuario-atual";
+
+export default async function Home() {
+  const user = await getCurrentUser();
+  redirect(firstAllowedPath(user.paginasAcesso));
+}

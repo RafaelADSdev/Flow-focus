@@ -26,31 +26,31 @@ colors:
   danger-soft: "oklch(0.95 0.035 28)"
 typography:
   display:
-    fontFamily: "\"Segoe UI Variable\", \"Aptos\", \"Segoe UI\", sans-serif"
+    fontFamily: "\"Plus Jakarta Sans\", system-ui, sans-serif"
     fontSize: "clamp(2rem, 3.4vw, 3.2rem)"
     fontWeight: 650
     lineHeight: 1.04
     letterSpacing: "-0.04em"
   headline:
-    fontFamily: "\"Segoe UI Variable\", \"Aptos\", \"Segoe UI\", sans-serif"
+    fontFamily: "\"Plus Jakarta Sans\", system-ui, sans-serif"
     fontSize: "clamp(1.65rem, 2.4vw, 2.25rem)"
     fontWeight: 650
     lineHeight: 1.12
     letterSpacing: "-0.025em"
   title:
-    fontFamily: "\"Segoe UI Variable\", \"Aptos\", \"Segoe UI\", sans-serif"
+    fontFamily: "\"Plus Jakarta Sans\", system-ui, sans-serif"
     fontSize: "1.15rem"
     fontWeight: 650
     lineHeight: 1.2
     letterSpacing: "-0.025em"
   body:
-    fontFamily: "\"Segoe UI Variable\", \"Aptos\", \"Segoe UI\", sans-serif"
+    fontFamily: "\"Plus Jakarta Sans\", system-ui, sans-serif"
     fontSize: "0.95rem"
     fontWeight: 400
     lineHeight: 1.55
     letterSpacing: "normal"
   label:
-    fontFamily: "\"Segoe UI Variable\", \"Aptos\", \"Segoe UI\", sans-serif"
+    fontFamily: "\"Plus Jakarta Sans\", system-ui, sans-serif"
     fontSize: "0.7rem"
     fontWeight: 650
     lineHeight: 1.3
@@ -144,7 +144,7 @@ Paleta oficial preta, marfim e roxa; semáforo discreto e independente para stat
 
 ## 3. Typography
 
-**Display / Headline / Body / Label:** `Segoe UI Variable`, `Aptos`, `Segoe UI`, sans-serif — uma única família humanista de sistema em pesos 400–720.
+**Display / Headline / Body / Label:** `Plus Jakarta Sans`, system-ui, sans-serif — uma única família humanista em pesos 400–720, carregada via `next/font` em todo o produto.
 
 **Character:** Operacional e legível; sem serifas, sem display extravagante. Confiança vem do peso e do espaçamento, não de ornamentos.
 

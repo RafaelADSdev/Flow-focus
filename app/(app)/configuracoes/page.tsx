@@ -9,7 +9,7 @@ const settingsLinks = [
   {
     href: "/configuracoes/acesso",
     title: "Gestão de acesso",
-    description: "Crie, edite ou desative acessos. Ajuste visão, esteira e equipe.",
+    description: "Crie, edite ou desative acessos. Ajuste visão, páginas, esteira e equipe.",
     icon: Shield,
     adminOnly: true,
   },

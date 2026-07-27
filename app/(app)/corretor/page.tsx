@@ -1,6 +1,7 @@
 import { BrokerPanel } from "@/components/broker-panel";
 import { PageGreeting } from "@/components/page-greeting";
 import { PageHeader } from "@/components/page-header";
+import { getBitrixPortalBaseUrl } from "@/lib/bitrix/portal";
 import { getCarteiraData } from "@/lib/data/carteira";
 
 export const metadata = { title: "Minha carteira" };
@@ -14,7 +15,7 @@ export default async function BrokerPage() {
         title="Minha carteira"
         description="Organize seu lote atual antes de captar novas oportunidades."
       />
-      <BrokerPanel data={carteira} />
+      <BrokerPanel data={carteira} bitrixPortalBase={getBitrixPortalBaseUrl()} />
     </>
   );
 }

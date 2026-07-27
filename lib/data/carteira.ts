@@ -67,7 +67,6 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
     usuarioResult,
     capturaResult,
     bloqueioResult,
-    auditoriaResult,
     atribuicoesResult,
     roletasResult,
     oportunidadesResult,
@@ -75,7 +74,6 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
     admin.from("usuarios").select("nome, perfil, ativo").eq("id", userId).single(),
     admin.from("capturas_diarias").select("quantidade_captada, limite_do_dia").eq("corretor_id", userId).eq("data", today).maybeSingle(),
     admin.from("bloqueios").select("id").eq("corretor_id", userId).is("liberado_em", null).limit(1),
-    admin.from("auditorias").select("id").eq("corretor_id", userId).eq("status", "pendente").limit(1),
     admin.from("roletas_corretor").select("roleta_id").eq("corretor_id", userId),
     admin.from("roletas").select("id, nome, descricao, ativa").eq("ativa", true).order("nome"),
     admin.from("oportunidades").select("id, bitrix_deal_id, titulo, valor, captada_em, corretor_id, roleta_id, ultima_atualizacao_bitrix, bitrix_stage_id, roleta_atual"),
@@ -88,11 +86,11 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
   const capturados = capturaResult.data?.quantidade_captada ?? 0;
   const limite = capturaResult.data?.limite_do_dia ?? 6;
   const bloqueado = Boolean(bloqueioResult.data?.length);
-  const auditoriaPendente = Boolean(auditoriaResult.data?.length);
 
   let estadoCiclo: CarteiraData["estado_ciclo"] = "captacao_liberada";
   if (bloqueado) estadoCiclo = "bloqueado";
-  else if (auditoriaPendente || capturados >= limite) estadoCiclo = "auditoria_pendente";
+  // Só bloqueia novo lote ao fechar o limite; a fila de auditoria já acompanha desde a 1ª captura.
+  else if (capturados >= limite) estadoCiclo = "auditoria_pendente";
 
   const roletaIds = new Set((atribuicoesResult.data ?? []).map((item) => item.roleta_id));
   const roletasAtivas = (roletasResult.data ?? []).filter((roleta) => roletaIds.has(roleta.id));

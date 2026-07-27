@@ -230,7 +230,16 @@ export async function captarOportunidade(input: unknown): Promise<ActionResult> 
     }
   }
 
+  const novaQuantidade = capturados + 1;
+  try {
+    const { ensurePendingAuditoriaForCorretor } = await import("@/lib/data/auditorias");
+    await ensurePendingAuditoriaForCorretor(admin, userId);
+  } catch {
+    // A captura já foi concluída; a fila de auditoria tenta reconciliar no próximo carregamento.
+  }
+
   revalidatePath("/corretor");
+  revalidatePath("/auditorias");
   return {
     ok: true,
     titulo: String(oportunidade.titulo ?? "Oportunidade captada"),

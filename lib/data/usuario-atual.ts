@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { AppUser } from "@/lib/types/app-user";
+import { defaultPaginasForPerfil } from "@/lib/auth/paginas-acesso";
 import { loadAuthProfile } from "@/lib/auth/load-auth-profile";
 import { createClient } from "@/lib/supabase/server";
 import { hasSupabaseEnv } from "@/lib/supabase/env";
@@ -14,6 +15,7 @@ export function getFallbackUser(): AppUser {
     perfil: "corretor",
     equipeNome: null,
     iniciais: "US",
+    paginasAcesso: defaultPaginasForPerfil("corretor"),
   };
 }
 
@@ -33,5 +35,6 @@ export async function getCurrentUser(): Promise<AppUser> {
     perfil: profile.perfil,
     equipeNome: profile.equipeNome,
     iniciais: initials(profile.nome),
+    paginasAcesso: profile.paginasAcesso,
   };
 }

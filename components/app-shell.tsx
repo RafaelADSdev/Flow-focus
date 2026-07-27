@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { LogOut, PanelLeftClose, PanelLeftOpen, Settings2 } from "lucide-react";
 import { signOutAction } from "@/lib/actions/auth";
+import { canAccessPath } from "@/lib/auth/paginas-acesso";
 import type { AppUser } from "@/lib/types/app-user";
 import { appNavigation } from "@/lib/app-navigation";
 import { formatUserRole, greetingForName } from "@/lib/greeting";
 import { AppTopbar } from "./app-topbar";
 import { BrandMark } from "./brand-mark";
+import { PartnerBrandLockup } from "./partner-brand-lockup";
 
 function MobileGreeting({ user }: { user: AppUser }) {
   const [greeting, setGreeting] = useState(() => greetingForName(user.nome));
@@ -31,12 +33,17 @@ function MobileGreeting({ user }: { user: AppUser }) {
 export function AppShell({ children, user }: { children: React.ReactNode; user: AppUser }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const visibleNav = useMemo(
+    () => appNavigation.filter((item) => canAccessPath(user.paginasAcesso, item.href)),
+    [user.paginasAcesso],
+  );
+  const canSeeSettings = canAccessPath(user.paginasAcesso, "/configuracoes");
 
   return (
     <div className={`app-shell${collapsed ? " sidebar-collapsed" : ""}`}>
       <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
         <div className="sidebar-top">
-          <BrandMark compact={collapsed} variant="on-dark" />
+          {!collapsed ? <PartnerBrandLockup tone="on-dark" /> : null}
           <button
             type="button"
             className="sidebar-toggle"
@@ -48,7 +55,7 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
           </button>
         </div>
         <nav className="primary-nav" aria-label="Navegação principal">
-          {appNavigation.map(({ href, label, icon: Icon, count }) => {
+          {visibleNav.map(({ href, label, icon: Icon, count }) => {
             const active = pathname === href;
             return (
               <Link
@@ -64,14 +71,16 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
               </Link>
             );
           })}
-          <Link
-            href="/configuracoes"
-            className={pathname.startsWith("/configuracoes") ? "nav-link active" : "nav-link"}
-            title={collapsed ? "Configurações" : undefined}
-          >
-            <Settings2 size={18} strokeWidth={1.6} aria-hidden="true" />
-            <span className="nav-label">Configurações</span>
-          </Link>
+          {canSeeSettings ? (
+            <Link
+              href="/configuracoes"
+              className={pathname.startsWith("/configuracoes") ? "nav-link active" : "nav-link"}
+              title={collapsed ? "Configurações" : undefined}
+            >
+              <Settings2 size={18} strokeWidth={1.6} aria-hidden="true" />
+              <span className="nav-label">Configurações</span>
+            </Link>
+          ) : null}
         </nav>
       </aside>
 
@@ -80,9 +89,11 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
           <BrandMark variant="on-light" />
           <MobileGreeting user={user} />
           <div className="mobile-header-actions">
-            <Link href="/configuracoes" className="mobile-header-icon" aria-label="Configurações">
-              <Settings2 size={18} strokeWidth={1.6} aria-hidden="true" />
-            </Link>
+            {canSeeSettings ? (
+              <Link href="/configuracoes" className="mobile-header-icon" aria-label="Configurações">
+                <Settings2 size={18} strokeWidth={1.6} aria-hidden="true" />
+              </Link>
+            ) : null}
             <form action={signOutAction}>
               <button type="submit" className="mobile-header-icon" aria-label="Sair">
                 <LogOut size={18} strokeWidth={1.6} aria-hidden="true" />
@@ -95,7 +106,7 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
       </div>
 
       <nav className="mobile-nav" aria-label="Navegação móvel">
-        {appNavigation.map(({ href, label, icon: Icon, count }) => (
+        {visibleNav.map(({ href, label, icon: Icon, count }) => (
           <Link href={href} key={href} className={pathname === href ? "active" : ""} aria-label={label}>
             <Icon size={20} aria-hidden="true" />
             {count ? <span>{count}</span> : null}

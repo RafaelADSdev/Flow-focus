@@ -4,7 +4,9 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Pencil, RefreshCw, Search, Trash2, UserPlus } from "lucide-react";
 import { atualizarAcesso, criarAcesso, desativarAcesso, reativarAcesso, sincronizarEquipesBitrix } from "@/lib/actions/acesso";
+import { appPageOptions, pageLabel, type PaginaAcesso } from "@/lib/auth/paginas-acesso";
 import {
+  defaultPaginasForPerfil,
   editarAcessoSchema,
   esteiraDashboardLabel,
   novoAcessoSchema,
@@ -23,6 +25,7 @@ const emptyForm: NovoAcessoInput = {
   perfil: "lider",
   esteira: "geral",
   equipeId: null,
+  paginasAcesso: defaultPaginasForPerfil("lider"),
 };
 
 type AccessManagementPanelProps = {
@@ -56,16 +59,39 @@ export function AccessManagementPanel({
   );
 
   const needsTeam = form.perfil === "corretor" || form.perfil === "lider";
+  const visiblePages = appPageOptions.filter((page) => (
+    (!("adminOnly" in page) || !page.adminOnly || form.perfil === "admin")
+    && (!("managerOnly" in page) || !page.managerOnly || form.perfil !== "corretor")
+  ));
 
   function updateField<K extends keyof NovoAcessoInput>(key: K, value: NovoAcessoInput[K]) {
     setSaved(false);
     setError("");
     setForm((current) => {
       const next = { ...current, [key]: value };
-      if (key === "perfil" && !["corretor", "lider"].includes(String(value))) {
-        next.equipeId = null;
+      if (key === "perfil") {
+        const perfil = value as NovoAcessoInput["perfil"];
+        if (!["corretor", "lider"].includes(perfil)) {
+          next.equipeId = null;
+        }
+        next.paginasAcesso = defaultPaginasForPerfil(perfil);
       }
       return next;
+    });
+  }
+
+  function togglePage(href: PaginaAcesso) {
+    setSaved(false);
+    setError("");
+    setForm((current) => {
+      const selected = new Set(current.paginasAcesso);
+      if (selected.has(href)) selected.delete(href);
+      else selected.add(href);
+      const nextPages = visiblePages.map((page) => page.href).filter((page) => selected.has(page));
+      return {
+        ...current,
+        paginasAcesso: nextPages.length ? nextPages : defaultPaginasForPerfil(current.perfil),
+      };
     });
   }
 
@@ -125,6 +151,7 @@ export function AccessManagementPanel({
       perfil: user.perfil,
       esteira: "geral",
       equipeId: user.equipeId,
+      paginasAcesso: user.paginasAcesso,
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -153,6 +180,7 @@ export function AccessManagementPanel({
       router.refresh();
     });
   }
+
   function toggleAccess(user: AcessoListItem) {
     if (!canManage) {
       setError("Configure SUPABASE_SECRET_KEY no servidor para alterar acessos.");
@@ -211,7 +239,7 @@ export function AccessManagementPanel({
           </span>
           <div>
             <h2>{editingId ? "Editar acesso" : "Novo acesso"}</h2>
-            <p>Cria a conta no Supabase Auth e define visão, esteira e equipe. Na edição, informe uma nova senha apenas se quiser alterá-la.</p>
+            <p>Cria a conta no Supabase Auth e define visão, páginas, esteira e equipe. Na edição, informe uma nova senha apenas se quiser alterá-la.</p>
           </div>
         </div>
 
@@ -266,6 +294,34 @@ export function AccessManagementPanel({
               ))}
             </select>
           </div>
+
+          <fieldset className="field access-choice-fieldset">
+            <legend>Páginas liberadas</legend>
+            <p className="field-hint access-pages-hint">
+              Ao mudar a visão, as páginas voltam ao padrão: corretor só Minha carteira; líder e diretora veem Roletas, Auditorias e Visão geral; Configurações só admin.
+            </p>
+            <div className="access-choice-group">
+              {visiblePages.map((page) => {
+                const checked = form.paginasAcesso.includes(page.href);
+                return (
+                  <label key={page.href} className={`access-choice-card${checked ? " is-checked" : ""}`}>
+                    <input
+                      type="checkbox"
+                      name="paginas"
+                      value={page.href}
+                      checked={checked}
+                      onChange={() => togglePage(page.href)}
+                      disabled={pending}
+                    />
+                    <span className="access-choice-indicator checkbox" aria-hidden="true">
+                      <Check size={11} strokeWidth={3} />
+                    </span>
+                    <span className="access-choice-label">{page.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
 
           <fieldset className="field access-choice-fieldset">
             <legend>Esteira do dashboard</legend>
@@ -331,7 +387,7 @@ export function AccessManagementPanel({
         <div className="section-heading">
           <div>
             <h2>Acessos cadastrados</h2>
-            <p>Edite visão, equipe ou senha. Use a sincronização para refletir entradas e saídas das equipes no Bitrix24.</p>
+            <p>Edite visão, páginas, equipe ou senha. Use a sincronização para refletir entradas e saídas das equipes no Bitrix24.</p>
           </div>
         </div>
 
@@ -354,11 +410,11 @@ export function AccessManagementPanel({
           <span className="access-count">{filtered.length} acessos</span>
         </div>
 
-        <div className="access-table">
+        <div className="access-table access-table-with-pages">
           <div className="access-head">
             <span>Usuário</span>
             <span>Visão</span>
-            <span>Esteira</span>
+            <span>Páginas</span>
             <span>Equipe</span>
             <span>Situação</span>
             <span>Ações</span>
@@ -373,7 +429,9 @@ export function AccessManagementPanel({
                 </span>
               </span>
               <span>{perfilLabels[user.perfil]}</span>
-              <span>{esteiraDashboardLabel}</span>
+              <span className="access-pages-cell">
+                {user.paginasAcesso.map((href) => pageLabel(href)).join(", ")}
+              </span>
               <span>
                 <strong>{user.equipeNome ?? "Todas"}</strong>
               </span>
