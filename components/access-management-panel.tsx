@@ -60,8 +60,7 @@ export function AccessManagementPanel({
 
   const needsTeam = form.perfil === "corretor" || form.perfil === "lider";
   const visiblePages = appPageOptions.filter((page) => (
-    (!("adminOnly" in page) || !page.adminOnly || form.perfil === "admin")
-    && (!("managerOnly" in page) || !page.managerOnly || form.perfil !== "corretor")
+    !("adminOnly" in page) || !page.adminOnly || form.perfil === "admin"
   ));
 
   function updateField<K extends keyof NovoAcessoInput>(key: K, value: NovoAcessoInput[K]) {
@@ -81,12 +80,14 @@ export function AccessManagementPanel({
   }
 
   function togglePage(href: PaginaAcesso) {
+    if (href === "/corretor") return;
     setSaved(false);
     setError("");
     setForm((current) => {
       const selected = new Set(current.paginasAcesso);
       if (selected.has(href)) selected.delete(href);
       else selected.add(href);
+      selected.add("/corretor");
       const nextPages = visiblePages.map((page) => page.href).filter((page) => selected.has(page));
       return {
         ...current,
@@ -298,20 +299,21 @@ export function AccessManagementPanel({
           <fieldset className="field access-choice-fieldset">
             <legend>Páginas liberadas</legend>
             <p className="field-hint access-pages-hint">
-              Ao mudar a visão, as páginas voltam ao padrão: corretor só Minha carteira; líder e diretora veem Roletas, Auditorias e Visão geral; Configurações só admin.
+              Minha carteira fica sempre liberada. Ao mudar a visão, as demais páginas voltam ao padrão: corretor só carteira; líder e diretora veem Roletas, Equipe, Auditorias e Visão geral; Configurações só admin.
             </p>
             <div className="access-choice-group">
               {visiblePages.map((page) => {
-                const checked = form.paginasAcesso.includes(page.href);
+                const locked = page.href === "/corretor";
+                const checked = locked || form.paginasAcesso.includes(page.href);
                 return (
-                  <label key={page.href} className={`access-choice-card${checked ? " is-checked" : ""}`}>
+                  <label key={page.href} className={`access-choice-card${checked ? " is-checked" : ""}${locked ? " is-locked" : ""}`}>
                     <input
                       type="checkbox"
                       name="paginas"
                       value={page.href}
                       checked={checked}
                       onChange={() => togglePage(page.href)}
-                      disabled={pending}
+                      disabled={pending || locked}
                     />
                     <span className="access-choice-indicator checkbox" aria-hidden="true">
                       <Check size={11} strokeWidth={3} />

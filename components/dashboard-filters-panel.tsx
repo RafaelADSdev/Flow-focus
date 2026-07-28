@@ -5,12 +5,15 @@ import { CalendarDays, Check, RotateCcw, SlidersHorizontal, X } from "lucide-rea
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import {
+  buildDashboardActiveChips,
+  clearDashboardChip,
   countActiveDashboardFilters,
   dashboardFiltersToSearchParams,
   defaultDashboardFilters,
   detectQuickPreset,
   formatDashboardPeriodRange,
   presetRange,
+  type DashboardActiveChip,
   type DashboardFilterOptions,
   type DashboardFilters,
   type DashboardQuickPreset,
@@ -56,6 +59,10 @@ export function DashboardFiltersPanel({ filters, options, basePath = "/dashboard
   const [draft, setDraft] = useState(filters);
 
   const activeCount = countActiveDashboardFilters(filters);
+  const activeChips = useMemo(
+    () => buildDashboardActiveChips(filters, options),
+    [filters, options],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -138,6 +145,10 @@ export function DashboardFiltersPanel({ filters, options, basePath = "/dashboard
     applyFilters(next);
   }
 
+  function removeChip(key: DashboardActiveChip["key"]) {
+    applyFilters(clearDashboardChip(filters, key));
+  }
+
   return (
     <>
       <div className="overview-period-filter-wrap">
@@ -158,6 +169,23 @@ export function DashboardFiltersPanel({ filters, options, basePath = "/dashboard
         <p className="overview-period-range" aria-live="polite">
           {formatDashboardPeriodRange(filters)}
         </p>
+        {activeChips.length ? (
+          <ul className="overview-filter-chips" aria-label="Filtros ativos">
+            {activeChips.map((chip) => (
+              <li key={chip.key}>
+                <button
+                  type="button"
+                  className="overview-filter-chip"
+                  onClick={() => removeChip(chip.key)}
+                  aria-label={`Remover filtro ${chip.label}`}
+                >
+                  <span>{chip.label}</span>
+                  <X size={14} aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
 
       {open ? (
@@ -196,6 +224,7 @@ export function DashboardFiltersPanel({ filters, options, basePath = "/dashboard
                   ["hoje", "Hoje"],
                   ["7", "7 dias"],
                   ["30", "30 dias"],
+                  ["60", "60 dias"],
                 ] as const).map(([preset, label]) => (
                   <button
                     key={preset}

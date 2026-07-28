@@ -44,7 +44,7 @@ export function LoginForm() {
 
     if (isDemo) {
       await new Promise((resolve) => setTimeout(resolve, 650));
-      router.push("/");
+      router.replace("/corretor");
       return;
     }
 
@@ -56,7 +56,7 @@ export function LoginForm() {
       return;
     }
 
-    router.push("/");
+    router.replace("/corretor");
     router.refresh();
   }
 

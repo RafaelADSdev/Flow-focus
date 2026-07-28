@@ -32,15 +32,18 @@ export async function fetchBitrixDealStages(categoryId: string): Promise<BitrixD
   });
 
   const prefix = `C${categoryId}:`;
-  return (rows ?? [])
-    .filter((row) => String(row.STATUS_ID ?? "").startsWith(prefix))
-    .map((row) => ({
-      id: String(row.STATUS_ID),
-      name: String(row.NAME ?? row.STATUS_ID),
+  const stages = new Map<string, BitrixDealStage>();
+  for (const row of rows ?? []) {
+    const id = String(row.STATUS_ID ?? "");
+    if (!id.startsWith(prefix) || stages.has(id)) continue;
+    stages.set(id, {
+      id,
+      name: String(row.NAME ?? id),
       sort: Number(row.SORT ?? 0),
       semantics: normalizeSemantics(row.SEMANTICS),
-    }))
-    .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "pt-BR"));
+    });
+  }
+  return [...stages.values()].sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "pt-BR"));
 }
 
 export function stripStageSemanticSuffix(stageId: string | null | undefined) {

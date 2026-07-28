@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildDashboardActiveChips,
   countActiveDashboardFilters,
   dashboardFiltersToSearchParams,
   dashboardPeriodDays,
+  detectQuickPreset,
   parseDashboardFilters,
 } from "./dashboard-filters";
 
@@ -35,5 +37,17 @@ describe("filtros da visão geral", () => {
     expect(params.get("roleta")).toBe("Roleta A");
     expect(params.has("corretor")).toBe(false);
     expect(countActiveDashboardFilters(filters)).toBe(2);
+  });
+
+  it("reconhece o preset de 60 dias como o padrão", () => {
+    const filters = parseDashboardFilters({});
+    expect(detectQuickPreset(filters)).toBe("60");
+    expect(buildDashboardActiveChips(filters, {
+      esteiras: [],
+      diretorias: [],
+      equipes: [],
+      corretores: [],
+      roletas: [],
+    })).toEqual([]);
   });
 });

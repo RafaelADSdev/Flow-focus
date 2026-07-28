@@ -33,6 +33,7 @@ As telas operacionais restantes ainda usam dados demonstrativos; o dashboard de 
 
 - O limite diario padrao e 6 e permanece um teto por dia. Aprovar uma auditoria remove o bloqueio e habilita o proximo lote quando ainda houver capacidade no dia ou no inicio do proximo dia; nao eleva silenciosamente o teto diario.
 - A importacao do Bitrix24 aceita somente negocios da categoria `36`, etapa `C36:NEW` ("Nova entrada") e cujo campo `UF_CRM_1726667595972` ("Roleta Atual") contenha a tag `Focus` em qualquer posicao.
+- O sync do Bolsão pagina pelo cursor `next` do Bitrix (não só por `total/50`) e reporta também o total Focus na category (qualquer etapa) para comparar com o Focus Analytics.
 - Todos os negocios elegiveis entram em uma unica roleta `Bolsao`; o valor completo de "Roleta Atual" permanece em `oportunidades.roleta_atual` para rastreabilidade.
 - A URL em `BITRIX24_BASE_URL` inclui o caminho autenticado do webhook outbound quando necessario, por exemplo `https://conta.bitrix24.com.br/rest/usuario/token`.
 - Horarios de negocio e o `current_date` do limite seguem o timezone configurado no Postgres. Configure o projeto Supabase para `America/Sao_Paulo` antes da producao.
@@ -147,6 +148,8 @@ Para carga local via CLI (ano inteiro, com vínculo de corretor pelo responsáve
 node scripts/sync-bitrix-comercial-geral-focus.mjs
 # ou YEAR=2025 node scripts/sync-bitrix-comercial-geral-focus.mjs
 ```
+
+Na aplicação, a sincronização do Comercial Geral cobre por padrão o ano atual e o anterior, pois um negócio antigo pode ser capturado ou movimentado hoje. Em bases com histórico maior, ajuste `BITRIX24_COMERCIAL_SYNC_START_YEAR`.
 
 `usuarios.equipe_id` preserva a chave estrangeira, enquanto `usuarios.equipe_nome` mostra diretamente o nome legivel da equipe. Triggers mantem os dois campos consistentes e propagam futuras alteracoes no nome da equipe.
 

@@ -44,13 +44,25 @@ export function listComercialGeralMonthPeriods(year = Number(process.env.YEAR ??
 }
 
 function getSyncConfig() {
-  const year = Number(process.env.YEAR ?? new Date().getFullYear());
-  const months = listComercialGeralMonthPeriods(year);
+  const currentYear = new Date().getFullYear();
+  const requestedYear = process.env.YEAR ? Number(process.env.YEAR) : null;
+  const startYear = requestedYear ?? Number(
+    process.env.BITRIX24_COMERCIAL_SYNC_START_YEAR ?? currentYear - 1,
+  );
+  const endYear = requestedYear ?? currentYear;
+  if (!Number.isInteger(startYear) || startYear < 2000 || startYear > endYear) {
+    throw new Error("BITRIX24_COMERCIAL_SYNC_START_YEAR deve ser um ano válido.");
+  }
+  const months = Array.from(
+    { length: endYear - startYear + 1 },
+    (_, index) => listComercialGeralMonthPeriods(startYear + index),
+  ).flat();
   return {
     categoryId: process.env.BITRIX24_CAPTURE_CATEGORY_ID ?? "16",
     rouletteField: process.env.BITRIX24_ROULETTE_FIELD ?? "UF_CRM_1726667595972",
     rouletteTag: process.env.BITRIX24_ROULETTE_TAG ?? "Focus",
-    year,
+    startYear,
+    endYear,
     months,
   };
 }
@@ -145,7 +157,7 @@ async function runSyncComercialGeralDeals(): Promise<ComercialGeralSyncSummary> 
         bitrix_funil_id: funilId,
         bitrix_category_id: String(config.categoryId),
         bitrix_roleta_valor: config.rouletteTag,
-        descricao: `Histórico Focus da category ${config.categoryId} para Visão geral (${config.year})`,
+        descricao: `Histórico Focus da category ${config.categoryId} para Visão geral (${config.startYear}-${config.endYear})`,
         ativa: true,
       },
       { onConflict: "bitrix_funil_id" },

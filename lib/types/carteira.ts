@@ -3,6 +3,7 @@ export type CarteiraRoleta = {
   nome: string;
   descricao: string;
   disponiveis: number;
+  tem_disponiveis: boolean;
 };
 
 export type CarteiraCaptura = {
@@ -10,6 +11,7 @@ export type CarteiraCaptura = {
   bitrix_deal_id: string;
   titulo: string;
   roleta: string;
+  roleta_id: string;
   captada_em: string;
   valor: number;
   status: "disponivel" | "captada" | "em_trabalho" | "convertida" | "perdida";

@@ -12,6 +12,8 @@ export type BitrixDealsSyncSummary = {
   ignorados: number;
   removidosDaFila: number;
   roletas: number;
+  /** Total Bitrix com tag Focus na category (qualquer etapa) — ajuda a explicar gap vs Bolsão. */
+  focusNaCategory: number | null;
 };
 
 function chunks<T>(items: T[], size: number) {
@@ -63,8 +65,8 @@ function opportunityStatus(
   return existing?.corretor_id ? "em_trabalho" : "perdida";
 }
 
-async function fetchEligiblePage(start: number, config: ReturnType<typeof getSyncConfig>) {
-  const dealFields = [
+function dealSelectFields(config: ReturnType<typeof getSyncConfig>) {
+  return [
     "ID",
     "TITLE",
     "CATEGORY_ID",
@@ -76,16 +78,52 @@ async function fetchEligiblePage(start: number, config: ReturnType<typeof getSyn
     "DATE_MODIFY",
     config.rouletteField,
   ];
+}
 
+async function fetchDealPage(
+  start: number,
+  config: ReturnType<typeof getSyncConfig>,
+  filters: Record<string, string>,
+) {
   const params = new URLSearchParams({
-    "filter[CATEGORY_ID]": config.categoryId,
-    "filter[STAGE_ID]": config.stageId,
-    [`filter[=%${config.rouletteField}]`]: `%${config.rouletteTag}%`,
+    ...filters,
     start: String(start),
   });
-  dealFields.forEach((field) => params.append("select[]", field));
-
+  dealSelectFields(config).forEach((field) => params.append("select[]", field));
   return bitrixCallPage<JsonRecord[]>("crm.deal.list", params, 30_000);
+}
+
+/** Percorre todas as páginas pelo cursor `next` do Bitrix (não confia só em total/50). */
+async function fetchAllPages(
+  config: ReturnType<typeof getSyncConfig>,
+  filters: Record<string, string>,
+) {
+  const deals: JsonRecord[] = [];
+  let start: number | undefined = 0;
+  let reportedTotal: number | null = null;
+
+  while (start !== undefined) {
+    const page = await fetchDealPage(start, config, filters);
+    if (reportedTotal === null && typeof page.total === "number") {
+      reportedTotal = page.total;
+    }
+    deals.push(...page.result);
+    start = typeof page.next === "number" ? page.next : undefined;
+  }
+
+  return { deals, reportedTotal };
+}
+
+async function countFocusInCategory(config: ReturnType<typeof getSyncConfig>) {
+  try {
+    const page = await fetchDealPage(0, config, {
+      "filter[CATEGORY_ID]": config.categoryId,
+      [`filter[=%${config.rouletteField}]`]: `%${config.rouletteTag}%`,
+    });
+    return typeof page.total === "number" ? page.total : page.result.length;
+  } catch {
+    return null;
+  }
 }
 
 let syncInFlight: Promise<BitrixDealsSyncSummary> | null = null;
@@ -108,17 +146,17 @@ async function runSyncBitrixDeals(): Promise<BitrixDealsSyncSummary> {
   const config = getSyncConfig();
   const admin = createAdminClient();
 
-  const first = await fetchEligiblePage(0, config);
-  const total = first.total ?? first.result.length;
-  const starts = Array.from({ length: Math.max(0, Math.ceil(total / 50) - 1) }, (_, index) => (index + 1) * 50);
-  const deals = [...first.result];
-
-  for (let index = 0; index < starts.length; index += 4) {
-    const pages = await Promise.all(starts.slice(index, index + 4).map((start) => fetchEligiblePage(start, config)));
-    pages.forEach((page) => deals.push(...page.result));
-  }
+  const [{ deals, reportedTotal }, focusNaCategory] = await Promise.all([
+    fetchAllPages(config, {
+      "filter[CATEGORY_ID]": config.categoryId,
+      "filter[STAGE_ID]": config.stageId,
+      [`filter[=%${config.rouletteField}]`]: `%${config.rouletteTag}%`,
+    }),
+    countFocusInCategory(config),
+  ]);
 
   const eligible = deals.filter((deal) => isEligible(deal, config));
+  const total = reportedTotal ?? eligible.length;
 
   const { data: roulette, error: rouletteError } = await admin.from("roletas").upsert({
     nome: config.poolName,
@@ -211,5 +249,6 @@ async function runSyncBitrixDeals(): Promise<BitrixDealsSyncSummary> {
     ignorados: deals.length - eligible.length,
     removidosDaFila,
     roletas: 1,
+    focusNaCategory,
   };
 }

@@ -28,7 +28,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { moveComercialKanbanCard, transferComercialKanbanCards } from "@/lib/actions/comercial-kanban";
 import type { ComercialKanbanCard, ComercialKanbanStage } from "@/lib/types/comercial-kanban";
 
@@ -36,12 +36,40 @@ type DragData = { card: ComercialKanbanCard; stageId: string };
 type DropData = { stageId: string };
 type BrokerOption = { id: string; name: string; team: string };
 
-const stageColors = ["#3C1A4F", "#62584D", "oklch(0.67 0.14 75)", "#A98DB2", "#1C1C1C"];
+type Flash =
+  | { kind: "success"; message: string; undo?: () => void | Promise<void> }
+  | { kind: "warning"; message: string }
+  | { kind: "error"; message: string };
 
-function stageColor(stage: ComercialKanbanStage, index: number) {
+type PendingConfirm =
+  | {
+      kind: "move";
+      card: ComercialKanbanCard;
+      fromStageId: string;
+      toStageId: string;
+      toStageName: string;
+      semantics: "S" | "F";
+    }
+  | {
+      kind: "transfer";
+      cardIds: string[];
+      brokerId: string;
+      brokerName: string;
+      closeDrawer: boolean;
+    };
+
+const UNDO_MS = 8_000;
+
+function stageAccent(stage: ComercialKanbanStage) {
   if (stage.semantics === "S") return "oklch(0.55 0.13 155)";
   if (stage.semantics === "F") return "oklch(0.56 0.19 28)";
-  return stageColors[index % stageColors.length];
+  return "var(--line)";
+}
+
+function stageToneClass(stage: ComercialKanbanStage) {
+  if (stage.semantics === "S") return " is-won";
+  if (stage.semantics === "F") return " is-lost";
+  return " is-pipeline";
 }
 
 function formatDate(value: string) {
@@ -120,8 +148,9 @@ function DealCard({
   return (
     <article
       ref={overlay ? undefined : setNodeRef}
+      data-card-id={overlay ? undefined : card.id}
       className={`kanban-card${overlay ? " is-overlay" : ""}${isDragging ? " is-dragging" : ""}${selected ? " is-selected" : ""}`}
-      style={{ transform: transform ? CSS.Translate.toString(transform) : undefined, "--stage-color": color } as React.CSSProperties}
+      style={{ transform: transform ? CSS.Translate.toString(transform) : undefined, "--stage-color": color } as CSSProperties}
     >
       <div className="kanban-card-topline" />
       <div className="kanban-card-head">
@@ -139,7 +168,13 @@ function DealCard({
             {selected ? <CheckSquare size={18} aria-hidden="true" /> : <Square size={18} aria-hidden="true" />}
           </button>
         ) : canMove && !overlay ? (
-          <button type="button" className="kanban-drag-handle" aria-label={`Mover ${card.title}`} {...listeners} {...attributes}>
+          <button
+            type="button"
+            className="kanban-drag-handle"
+            aria-label={`Mover ${card.title}. Arraste para outra coluna ou abra o card para escolher a fase.`}
+            {...listeners}
+            {...attributes}
+          >
             <GripVertical size={17} aria-hidden="true" />
           </button>
         ) : null}
@@ -147,6 +182,7 @@ function DealCard({
       <p className="kanban-card-assignee"><UserRound size={13} aria-hidden="true" />{card.assignedTo}</p>
       <p className="kanban-card-team">{card.team}</p>
       <div className="kanban-card-meta">
+        <span><CircleDollarSign size={12} aria-hidden="true" />{formatCurrency(card.value)}</span>
         <span><CalendarDays size={12} aria-hidden="true" />{formatDate(card.enteredAt)}</span>
         {staleDays >= 3 ? <span className="kanban-stale"><Clock3 size={12} aria-hidden="true" />{staleDays} dias sem mover</span> : null}
       </div>
@@ -157,7 +193,6 @@ function DealCard({
 
 function KanbanColumn({
   stage,
-  index,
   canMove,
   batchMode,
   selectedIds,
@@ -165,7 +200,6 @@ function KanbanColumn({
   onToggle,
 }: {
   stage: ComercialKanbanStage;
-  index: number;
   canMove: boolean;
   batchMode: boolean;
   selectedIds: Set<string>;
@@ -173,22 +207,31 @@ function KanbanColumn({
   onToggle: (card: ComercialKanbanCard) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `stage-${stage.id}`, data: { stageId: stage.id } satisfies DropData });
-  const color = stageColor(stage, index);
+  const color = stageAccent(stage);
+  const semanticLabel = stage.semantics === "S" ? "Ganho" : stage.semantics === "F" ? "Perdido" : null;
 
   return (
-    <section ref={setNodeRef} className={`kanban-column${isOver ? " is-over" : ""}`} style={{ "--stage-color": color } as React.CSSProperties}>
+    <section
+      ref={setNodeRef}
+      className={`kanban-column${stageToneClass(stage)}${isOver ? " is-over" : ""}`}
+      style={{ "--stage-color": color } as CSSProperties}
+    >
       <header className="kanban-column-header">
         <span className="kanban-column-signal" aria-hidden="true" />
         <div>
           <h2>{stage.name}</h2>
-          <p>{stage.cards.length === 1 ? "1 negócio" : `${stage.cards.length} negócios`}</p>
+          {semanticLabel ? (
+            <p><span className={`status ${stage.semantics === "S" ? "status-success" : "status-danger"}`}>{semanticLabel}</span></p>
+          ) : null}
         </div>
-        <strong>{stage.cards.length}</strong>
+        <strong aria-label={stage.cards.length === 1 ? "1 negócio" : `${stage.cards.length} negócios`}>
+          {stage.cards.length}
+        </strong>
       </header>
       <div className="kanban-column-body">
         {stage.cards.length ? stage.cards.map((card) => (
           <DealCard
-            key={card.id}
+            key={`${stage.id}:${card.id}`}
             card={card}
             stageId={stage.id}
             color={color}
@@ -209,19 +252,28 @@ function KanbanColumn({
 function DealDrawer({
   card,
   stage,
+  stages,
   brokers,
+  canMove,
   transferring,
+  moving,
   onClose,
   onTransfer,
+  onMove,
 }: {
   card: ComercialKanbanCard;
   stage: ComercialKanbanStage;
+  stages: ComercialKanbanStage[];
   brokers: BrokerOption[];
+  canMove: boolean;
   transferring: boolean;
+  moving: boolean;
   onClose: () => void;
   onTransfer: (brokerId: string) => void;
+  onMove: (stageId: string) => void;
 }) {
   const [targetBrokerId, setTargetBrokerId] = useState("");
+  const [targetStageId, setTargetStageId] = useState("");
   const fields = [
     { icon: UserRound, label: "Corretor", value: card.assignedTo },
     { icon: UsersRound, label: "Equipe", value: card.team },
@@ -229,6 +281,8 @@ function DealDrawer({
     { icon: CalendarDays, label: "Entrada", value: formatDate(card.enteredAt) },
     { icon: Clock3, label: "Última movimentação", value: formatDate(card.updatedAt) },
   ];
+  const moveTargets = stages.filter((item) => item.id !== stage.id);
+  const busy = transferring || moving;
 
   return (
     <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -274,6 +328,36 @@ function DealDrawer({
             <span>Roleta atual</span>
             <strong>{card.roulette}</strong>
           </div>
+          {canMove && moveTargets.length ? (
+            <div className="kanban-transfer-block">
+              <label htmlFor="drawer-target-stage">Mover para fase</label>
+              <div>
+                <select
+                  id="drawer-target-stage"
+                  value={targetStageId}
+                  onChange={(event) => setTargetStageId(event.target.value)}
+                  disabled={busy}
+                >
+                  <option value="">Selecione a fase</option>
+                  {moveTargets.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                      {item.semantics === "S" ? " · Ganho" : item.semantics === "F" ? " · Perdido" : ""}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  disabled={!targetStageId || busy}
+                  onClick={() => onMove(targetStageId)}
+                >
+                  {moving ? <Loader2 className="spin" size={16} aria-hidden="true" /> : null}
+                  Mover
+                </button>
+              </div>
+            </div>
+          ) : null}
           {brokers.length ? (
             <div className="kanban-transfer-block">
               <label htmlFor="drawer-target-broker">Transferir negócio</label>
@@ -282,7 +366,7 @@ function DealDrawer({
                   id="drawer-target-broker"
                   value={targetBrokerId}
                   onChange={(event) => setTargetBrokerId(event.target.value)}
-                  disabled={transferring}
+                  disabled={busy}
                 >
                   <option value="">Selecione o corretor</option>
                   {brokers.map((broker) => (
@@ -292,7 +376,7 @@ function DealDrawer({
                 <button
                   type="button"
                   className="button button-secondary"
-                  disabled={!targetBrokerId || transferring}
+                  disabled={!targetBrokerId || busy}
                   onClick={() => onTransfer(targetBrokerId)}
                 >
                   {transferring ? <Loader2 className="spin" size={16} aria-hidden="true" /> : <ArrowRightLeft size={16} aria-hidden="true" />}
@@ -314,6 +398,54 @@ function DealDrawer({
   );
 }
 
+function ConfirmDialog({
+  title,
+  body,
+  confirmLabel,
+  danger = false,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  danger?: boolean;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="drawer-backdrop kanban-confirm-backdrop" onMouseDown={(event) => event.target === event.currentTarget && !busy && onCancel()}>
+      <div
+        className="kanban-confirm"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="kanban-confirm-title"
+        aria-describedby="kanban-confirm-body"
+      >
+        <h2 id="kanban-confirm-title">{title}</h2>
+        <p id="kanban-confirm-body">{body}</p>
+        <div className="kanban-confirm-actions">
+          <button type="button" className="button button-quiet" disabled={busy} onClick={onCancel}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className={`button ${danger ? "button-danger" : "button-primary"}`}
+            disabled={busy}
+            autoFocus
+            onClick={onConfirm}
+          >
+            {busy ? <Loader2 className="spin" size={16} aria-hidden="true" /> : null}
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ComercialKanbanBoard({
   initialStages,
   canMove,
@@ -331,8 +463,29 @@ export function ComercialKanbanBoard({
   const [targetBrokerId, setTargetBrokerId] = useState("");
   const [moving, setMoving] = useState(false);
   const [transferring, setTransferring] = useState(false);
-  const [error, setError] = useState("");
+  const [flash, setFlash] = useState<Flash | null>(null);
+  const [pending, setPending] = useState<PendingConfirm | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusCardId = useRef<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 7 } }), useSensor(KeyboardSensor));
+
+  useEffect(() => () => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+  }, []);
+
+  function dismissDrawer() {
+    const restoreId = focusCardId.current ?? selectedId;
+    setSelectedId(null);
+    if (!restoreId) return;
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-card-id="${restoreId}"] .kanban-card-title`)?.focus();
+    });
+  }
+
+  function openCard(card: ComercialKanbanCard) {
+    focusCardId.current = card.id;
+    setSelectedId(card.id);
+  }
 
   const selected = (() => {
     for (const stage of stages) {
@@ -342,22 +495,78 @@ export function ComercialKanbanBoard({
     return null;
   })();
 
+  function clearFlash() {
+    if (undoTimer.current) {
+      clearTimeout(undoTimer.current);
+      undoTimer.current = null;
+    }
+    setFlash(null);
+  }
+
+  function showSuccess(message: string, undo?: () => void | Promise<void>) {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setFlash({ kind: "success", message, undo });
+    undoTimer.current = setTimeout(() => {
+      setFlash((current) => (current?.kind === "success" ? null : current));
+      undoTimer.current = null;
+    }, UNDO_MS);
+  }
+
+  async function commitMove(card: ComercialKanbanCard, fromStageId: string, toStageId: string, toStageName: string) {
+    const previous = stages;
+    setFlash(null);
+    setStages((current) => moveCard(current, card.id, toStageId));
+    setMoving(true);
+    const result = await moveComercialKanbanCard({ opportunityId: card.id, stageId: toStageId });
+    setMoving(false);
+    if (!result.ok) {
+      setStages(previous);
+      setFlash({ kind: "error", message: result.error });
+      return;
+    }
+
+    showSuccess(`Fase atualizada no Bitrix24: ${toStageName}`, async () => {
+      if (undoTimer.current) {
+        clearTimeout(undoTimer.current);
+        undoTimer.current = null;
+      }
+      setFlash(null);
+      setStages((current) => moveCard(current, card.id, fromStageId));
+      setMoving(true);
+      const undo = await moveComercialKanbanCard({ opportunityId: card.id, stageId: fromStageId });
+      setMoving(false);
+      if (!undo.ok) {
+        setStages((current) => moveCard(current, card.id, toStageId));
+        setFlash({ kind: "error", message: undo.error || "Não foi possível desfazer no Bitrix24." });
+        return;
+      }
+      showSuccess("Movimentação desfeita no Bitrix24.");
+    });
+  }
+
+  function requestMove(card: ComercialKanbanCard, fromStageId: string, toStageId: string) {
+    const target = stages.find((stage) => stage.id === toStageId);
+    if (!target) return;
+    if (target.semantics === "S" || target.semantics === "F") {
+      setPending({
+        kind: "move",
+        card,
+        fromStageId,
+        toStageId,
+        toStageName: target.name,
+        semantics: target.semantics,
+      });
+      return;
+    }
+    void commitMove(card, fromStageId, toStageId, target.name);
+  }
+
   async function handleDragEnd(event: DragEndEvent) {
     const active = event.active.data.current as DragData | undefined;
     const over = event.over?.data.current as DropData | undefined;
     setActiveDrag(null);
-    if (!active || !over || active.stageId === over.stageId || moving) return;
-
-    const previous = stages;
-    setError("");
-    setStages((current) => moveCard(current, active.card.id, over.stageId));
-    setMoving(true);
-    const result = await moveComercialKanbanCard({ opportunityId: active.card.id, stageId: over.stageId });
-    setMoving(false);
-    if (!result.ok) {
-      setStages(previous);
-      setError(result.error);
-    }
+    if (!active || !over || active.stageId === over.stageId || moving || transferring || pending) return;
+    requestMove(active.card, active.stageId, over.stageId);
   }
 
   function toggleCard(card: ComercialKanbanCard) {
@@ -375,42 +584,108 @@ export function ComercialKanbanBoard({
     setTargetBrokerId("");
   }
 
-  async function handleTransfer(cardIds: string[], brokerId: string, closeDrawer = false) {
-    if (!cardIds.length || !brokerId || transferring) return;
+  function requestTransfer(cardIds: string[], brokerId: string, closeDrawer = false) {
+    if (!cardIds.length || !brokerId || transferring || moving) return;
+    const broker = brokers.find((item) => item.id === brokerId);
+    if (!broker) return;
+    setPending({
+      kind: "transfer",
+      cardIds,
+      brokerId,
+      brokerName: broker.name,
+      closeDrawer,
+    });
+  }
+
+  async function commitTransfer(cardIds: string[], brokerId: string, closeDrawer: boolean) {
     const broker = brokers.find((item) => item.id === brokerId);
     if (!broker) return;
 
-    setError("");
+    setFlash(null);
     setTransferring(true);
     const result = await transferComercialKanbanCards({ opportunityIds: cardIds, brokerId });
     setTransferring(false);
     if (!result.ok) {
-      setError(result.error);
+      setFlash({ kind: "error", message: result.error });
       return;
     }
 
     const movedIds = new Set(result.movedIds);
     setStages((current) => assignCards(current, movedIds, broker));
     setSelectedIds((current) => new Set([...current].filter((id) => !movedIds.has(id))));
-    if (result.warning) setError(result.warning);
-    if (closeDrawer && movedIds.has(cardIds[0])) setSelectedId(null);
+    if (closeDrawer && movedIds.has(cardIds[0])) dismissDrawer();
     if (!result.warning && !closeDrawer) {
       setBatchMode(false);
       setTargetBrokerId("");
     }
+
+    const count = result.movedIds.length;
+    const label = count === 1 ? "1 negócio transferido" : `${count} negócios transferidos`;
+    if (result.warning) {
+      setFlash({ kind: "warning", message: result.warning });
+    } else {
+      showSuccess(`${label} para ${broker.name}.`);
+    }
   }
+
+  async function resolvePending() {
+    if (!pending) return;
+    const current = pending;
+    setPending(null);
+    if (current.kind === "move") {
+      await commitMove(current.card, current.fromStageId, current.toStageId, current.toStageName);
+      return;
+    }
+    await commitTransfer(current.cardIds, current.brokerId, current.closeDrawer);
+  }
+
+  const confirmCopy = pending?.kind === "move"
+    ? {
+        title: pending.semantics === "S" ? "Marcar como ganho no Bitrix24?" : "Marcar como perdido no Bitrix24?",
+        body: `“${pending.card.title}” vai para ${pending.toStageName}. Essa mudança é escrita no Bitrix24.`,
+        confirmLabel: pending.semantics === "S" ? "Confirmar ganho" : "Confirmar perdido",
+        danger: pending.semantics === "F",
+      }
+    : pending?.kind === "transfer"
+      ? {
+          title: pending.cardIds.length === 1 ? "Transferir negócio?" : `Transferir ${pending.cardIds.length} negócios?`,
+          body: `A atribuição no Bitrix24 passa para ${pending.brokerName}.`,
+          confirmLabel: "Confirmar transferência",
+          danger: false,
+        }
+      : null;
 
   return (
     <div className="kanban-workspace">
-      {error ? (
-        <div className="kanban-error" role="alert">
-          <span>{error}</span>
-          <button type="button" className="button button-quiet" onClick={() => setError("")}><RotateCcw size={15} />Fechar</button>
+      <div className="sr-only" aria-live="polite">
+        {batchMode
+          ? `Modo de seleção ativo. ${selectedIds.size === 1 ? "1 negócio selecionado" : `${selectedIds.size} negócios selecionados`}. Toque nos títulos para incluir ou remover.`
+          : ""}
+      </div>
+      {flash ? (
+        <div
+          className={`kanban-flash is-${flash.kind}`}
+          role={flash.kind === "error" || flash.kind === "warning" ? "alert" : "status"}
+          aria-live="polite"
+        >
+          <span>{flash.message}</span>
+          <div className="kanban-flash-actions">
+            {flash.kind === "success" && flash.undo ? (
+              <button type="button" className="button button-quiet" onClick={() => void flash.undo?.()}>
+                <RotateCcw size={15} aria-hidden="true" />
+                Desfazer
+              </button>
+            ) : null}
+            <button type="button" className="button button-quiet" onClick={clearFlash} aria-label="Dispensar aviso">
+              <X size={15} aria-hidden="true" />
+              Fechar
+            </button>
+          </div>
         </div>
       ) : null}
       {canMove && brokers.length ? (
         <div className={`kanban-batch-toolbar${batchMode ? " is-active" : ""}`}>
-          <button type="button" className="button button-secondary" aria-pressed={batchMode} onClick={toggleBatchMode} disabled={transferring}>
+          <button type="button" className="button button-secondary" aria-pressed={batchMode} onClick={toggleBatchMode} disabled={transferring || moving}>
             <CheckSquare size={16} aria-hidden="true" />
             {batchMode ? "Cancelar seleção" : "Transferir em lote"}
           </button>
@@ -427,7 +702,7 @@ export function ComercialKanbanBoard({
                 type="button"
                 className="button button-primary"
                 disabled={!selectedIds.size || !targetBrokerId || transferring}
-                onClick={() => handleTransfer([...selectedIds], targetBrokerId)}
+                onClick={() => requestTransfer([...selectedIds], targetBrokerId)}
               >
                 {transferring ? <Loader2 className="spin" size={16} aria-hidden="true" /> : <ArrowRightLeft size={16} aria-hidden="true" />}
                 Transferir
@@ -443,15 +718,14 @@ export function ComercialKanbanBoard({
         onDragEnd={handleDragEnd}
       >
         <div className="kanban-board" aria-label="Kanban do Comercial Geral">
-          {stages.map((stage, index) => (
+          {stages.map((stage) => (
             <KanbanColumn
               key={stage.id}
               stage={stage}
-              index={index}
-              canMove={canMove && !moving && !transferring}
+              canMove={canMove && !moving && !transferring && !pending}
               batchMode={batchMode}
               selectedIds={selectedIds}
-              onOpen={(card) => setSelectedId(card.id)}
+              onOpen={openCard}
               onToggle={toggleCard}
             />
           ))}
@@ -461,7 +735,7 @@ export function ComercialKanbanBoard({
             <DealCard
               card={activeDrag.card}
               stageId={activeDrag.stageId}
-              color={stageColor(stages.find((stage) => stage.id === activeDrag.stageId)!, Math.max(0, stages.findIndex((stage) => stage.id === activeDrag.stageId)))}
+              color={stageAccent(stages.find((stage) => stage.id === activeDrag.stageId)!)}
               canMove={false}
               overlay
             />
@@ -469,14 +743,32 @@ export function ComercialKanbanBoard({
         </DragOverlay>
       </DndContext>
       {moving ? <div className="kanban-moving" aria-live="polite"><Loader2 className="spin" size={17} />Atualizando fase no Bitrix24…</div> : null}
-      {selected ? (
+      {selected && !pending ? (
         <DealDrawer
           card={selected.card}
           stage={selected.stage}
+          stages={stages}
           brokers={brokers}
+          canMove={canMove}
           transferring={transferring}
-          onClose={() => setSelectedId(null)}
-          onTransfer={(brokerId) => handleTransfer([selected.card.id], brokerId, true)}
+          moving={moving}
+          onClose={dismissDrawer}
+          onTransfer={(brokerId) => requestTransfer([selected.card.id], brokerId, true)}
+          onMove={(stageId) => {
+            dismissDrawer();
+            requestMove(selected.card, selected.stage.id, stageId);
+          }}
+        />
+      ) : null}
+      {pending && confirmCopy ? (
+        <ConfirmDialog
+          title={confirmCopy.title}
+          body={confirmCopy.body}
+          confirmLabel={confirmCopy.confirmLabel}
+          danger={confirmCopy.danger}
+          busy={moving || transferring}
+          onCancel={() => setPending(null)}
+          onConfirm={() => void resolvePending()}
         />
       ) : null}
     </div>

@@ -3,7 +3,7 @@ import type { PerfilUsuario } from "@/lib/database.types";
 export const appPageOptions = [
   { href: "/corretor", label: "Minha carteira" },
   { href: "/roletas", label: "Roletas" },
-  { href: "/comercial-geral", label: "Comercial Geral", managerOnly: true },
+  { href: "/equipe", label: "Equipe" },
   { href: "/auditorias", label: "Auditorias" },
   { href: "/dashboard", label: "Visão geral" },
   { href: "/configuracoes", label: "Configurações", adminOnly: true },
@@ -22,9 +22,9 @@ export function defaultPaginasForPerfil(perfil: PerfilUsuario): PaginaAcesso[] {
       return ["/corretor"];
     case "lider":
     case "diretora":
-      return ["/roletas", "/comercial-geral", "/auditorias", "/dashboard"];
+      return ["/corretor", "/roletas", "/equipe", "/auditorias", "/dashboard"];
     case "admin":
-      return ["/corretor", "/roletas", "/comercial-geral", "/auditorias", "/dashboard", "/configuracoes"];
+      return ["/corretor", "/roletas", "/equipe", "/auditorias", "/dashboard", "/configuracoes"];
     default:
       return ["/corretor"];
   }
@@ -39,32 +39,16 @@ export function normalizePaginasAcesso(
     .map((page) => page.trim())
     .filter((page): page is PaginaAcesso => allowed.has(page));
 
-  const withoutConfig = perfil === "admin"
+  const allowedForProfile = perfil === "admin"
     ? cleaned
     : cleaned.filter((page) => page !== "/configuracoes");
-  const allowedForProfile = perfil === "corretor"
-    ? withoutConfig.filter((page) => page !== "/comercial-geral")
-    : withoutConfig;
-
-  const legacyDefaults = perfil === "admin"
-    ? ["/corretor", "/roletas", "/auditorias", "/dashboard", "/configuracoes"]
-    : perfil === "lider" || perfil === "diretora"
-      ? ["/roletas", "/auditorias", "/dashboard"]
-      : [];
-  const isLegacyDefault = legacyDefaults.length === allowedForProfile.length
-    && legacyDefaults.every((page) => allowedForProfile.includes(page as PaginaAcesso));
-  if (isLegacyDefault) {
-    const auditIndex = allowedForProfile.indexOf("/auditorias");
-    const next = [...allowedForProfile];
-    next.splice(auditIndex < 0 ? next.length : auditIndex, 0, "/comercial-geral");
-    return next;
-  }
 
   if (!allowedForProfile.length) {
     return defaultPaginasForPerfil(perfil);
   }
 
-  return [...new Set(allowedForProfile)];
+  // Minha carteira é a entrada de captação — sempre liberada para qualquer perfil.
+  return [...new Set(["/corretor" as PaginaAcesso, ...allowedForProfile])];
 }
 
 export function canAccessPath(paginas: readonly string[], pathname: string): boolean {

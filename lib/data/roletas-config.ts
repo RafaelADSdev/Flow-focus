@@ -12,6 +12,32 @@ import type { RoletasConfigData } from "@/lib/types/roletas";
 
 export type { RoletasConfigCorretor, RoletasConfigData, RoletasConfigRoleta } from "@/lib/types/roletas";
 
+const ROLETA_COMERCIAL_GERAL_FOCUS = "Comercial Geral · Focus";
+
+function isRoletaCaptura(roleta: { nome: string; bitrix_funil_id?: string | null }) {
+  if (roleta.nome === ROLETA_COMERCIAL_GERAL_FOCUS) return false;
+  if (roleta.bitrix_funil_id?.endsWith(":dashboard")) return false;
+  return true;
+}
+
+function withoutOperationalRoletas(data: RoletasConfigData): RoletasConfigData {
+  const excluded = new Set(
+    data.roletas
+      .filter((roleta) => roleta.nome === ROLETA_COMERCIAL_GERAL_FOCUS)
+      .map((roleta) => roleta.id),
+  );
+  if (!excluded.size) return data;
+
+  return {
+    ...data,
+    roletas: data.roletas.filter((roleta) => !excluded.has(roleta.id)),
+    corretores: data.corretores.map((corretor) => ({
+      ...corretor,
+      roletas: corretor.roletas.filter((roletaId) => !excluded.has(roletaId)),
+    })),
+  };
+}
+
 const roletaSchema = z.object({
   id: z.string().uuid(),
   nome: z.string(),
@@ -103,7 +129,7 @@ async function loadRoletasConfigFromTables(viewer: ViewerContext): Promise<Rolet
 
   const [roletasResult, usuarios, perfilByUserId, atribuicoesResult, bloqueiosResult, auditoriasResult, oportunidadesResult] =
     await Promise.all([
-      admin.from("roletas").select("id, nome").eq("ativa", true).order("nome"),
+      admin.from("roletas").select("id, nome, bitrix_funil_id").eq("ativa", true).order("nome"),
       loadUsuariosAtivos(admin),
       loadPerfilByUserId(admin),
       admin.from("roletas_corretor").select("corretor_id, roleta_id"),
@@ -151,9 +177,16 @@ async function loadRoletasConfigFromTables(viewer: ViewerContext): Promise<Rolet
     ?? corretores.find((corretor) => corretor.equipe_nome)?.equipe_nome
     ?? "Equipe";
 
+  const roletasCaptura = (roletasResult.data ?? []).filter(isRoletaCaptura);
+  const excludedRoletaIds = new Set(
+    (roletasResult.data ?? [])
+      .filter((roleta) => !isRoletaCaptura(roleta))
+      .map((roleta) => roleta.id),
+  );
+
   return configSchema.parse({
     equipe_nome: equipeNome,
-    roletas: (roletasResult.data ?? []).map((roleta) => ({
+    roletas: roletasCaptura.map((roleta) => ({
       id: roleta.id,
       nome: roleta.nome,
       disponiveis: disponiveisPorRoleta.get(roleta.id) ?? 0,
@@ -163,7 +196,7 @@ async function loadRoletasConfigFromTables(viewer: ViewerContext): Promise<Rolet
       nome: corretor.nome,
       email: corretor.email,
       equipeNome: corretor.equipe_nome,
-      roletas: roletasPorCorretor.get(corretor.id) ?? [],
+      roletas: (roletasPorCorretor.get(corretor.id) ?? []).filter((roletaId) => !excludedRoletaIds.has(roletaId)),
       status: bloqueados.has(corretor.id)
         ? "bloqueado"
         : emAuditoria.has(corretor.id)
@@ -191,7 +224,7 @@ export async function getRoletasConfigData(): Promise<RoletasConfigData> {
 
   if (!error && data) {
     const parsed = configSchema.safeParse(data);
-    if (parsed.success) return parsed.data;
+    if (parsed.success) return withoutOperationalRoletas(parsed.data);
   }
 
   if (isMissingRpc(error, "obter_config_roletas")) {

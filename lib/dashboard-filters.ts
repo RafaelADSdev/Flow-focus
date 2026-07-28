@@ -2,7 +2,7 @@ import { esteiraDashboardLabel } from "@/lib/schemas/acesso";
 
 export const DASHBOARD_PERIOD_DEFAULT = 60;
 
-export type DashboardQuickPreset = "hoje" | "7" | "30";
+export type DashboardQuickPreset = "hoje" | "7" | "30" | "60";
 
 export type DashboardFilters = {
   de: string;
@@ -52,7 +52,7 @@ export function presetRange(preset: DashboardQuickPreset): Pick<DashboardFilters
     return { de: toIsoDate(start), ate: toIsoDate(end) };
   }
 
-  const days = preset === "7" ? 7 : 30;
+  const days = preset === "7" ? 7 : preset === "30" ? 30 : 60;
   start.setDate(start.getDate() - (days - 1));
   return { de: toIsoDate(start), ate: toIsoDate(end) };
 }
@@ -135,11 +135,76 @@ export function countActiveDashboardFilters(filters: DashboardFilters) {
 }
 
 export function detectQuickPreset(filters: DashboardFilters): DashboardQuickPreset | null {
-  for (const preset of ["hoje", "7", "30"] as const) {
+  for (const preset of ["hoje", "7", "30", "60"] as const) {
     const range = presetRange(preset);
     if (filters.de === range.de && filters.ate === range.ate) return preset;
   }
   return null;
+}
+
+export type DashboardActiveChip = {
+  key: "periodo" | "diretoria" | "equipe" | "corretor" | "roleta";
+  label: string;
+};
+
+export function buildDashboardActiveChips(
+  filters: DashboardFilters,
+  options: DashboardFilterOptions,
+): DashboardActiveChip[] {
+  const defaults = defaultDashboardFilters();
+  const chips: DashboardActiveChip[] = [];
+
+  if (filters.de !== defaults.de || filters.ate !== defaults.ate) {
+    const preset = detectQuickPreset(filters);
+    const periodLabel = preset === "hoje"
+      ? "Hoje"
+      : preset === "7"
+        ? "7 dias"
+        : preset === "30"
+          ? "30 dias"
+          : preset === "60"
+            ? "60 dias"
+            : formatDashboardPeriodRange(filters);
+    chips.push({ key: "periodo", label: periodLabel });
+  }
+
+  if (filters.diretoria) {
+    const label = options.diretorias.find((item) => item.id === filters.diretoria)?.label ?? "Diretoria";
+    chips.push({ key: "diretoria", label });
+  }
+  if (filters.equipe) {
+    const label = options.equipes.find((item) => item.id === filters.equipe)?.nome ?? "Equipe";
+    chips.push({ key: "equipe", label });
+  }
+  if (filters.corretor) {
+    const label = options.corretores.find((item) => item.id === filters.corretor)?.nome ?? "Corretor";
+    chips.push({ key: "corretor", label });
+  }
+  if (filters.roleta) {
+    const label = options.roletas.find((item) => item.value === filters.roleta)?.label ?? filters.roleta;
+    chips.push({ key: "roleta", label });
+  }
+
+  return chips;
+}
+
+export function clearDashboardChip(
+  filters: DashboardFilters,
+  key: DashboardActiveChip["key"],
+): DashboardFilters {
+  if (key === "periodo") {
+    return { ...filters, ...presetRangeFromDays(DASHBOARD_PERIOD_DEFAULT) };
+  }
+  if (key === "diretoria") {
+    return { ...filters, diretoria: "", equipe: "", corretor: "" };
+  }
+  if (key === "equipe") {
+    return { ...filters, equipe: "", corretor: "" };
+  }
+  if (key === "corretor") {
+    return { ...filters, corretor: "" };
+  }
+  return { ...filters, roleta: "" };
 }
 
 export function formatDashboardPeriodRange(filters: Pick<DashboardFilters, "de" | "ate">) {

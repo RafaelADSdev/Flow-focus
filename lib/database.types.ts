@@ -8,9 +8,15 @@ export type Database = {
   public: {
     Tables: {
       usuarios: {
-        Row: { id: string; nome: string; email: string; perfil: PerfilUsuario; equipe_id: string | null; equipe_nome: string | null; bitrix_user_id: string | null; bitrix_department_id: string | null; paginas_acesso: string[]; ativo: boolean; criado_em: string; atualizado_em: string };
-        Insert: { id: string; nome: string; email: string; perfil?: PerfilUsuario; equipe_id?: string | null; equipe_nome?: string | null; bitrix_user_id?: string | null; bitrix_department_id?: string | null; paginas_acesso?: string[]; ativo?: boolean };
+        Row: { id: string; nome: string; email: string; perfil: PerfilUsuario; equipe_id: string | null; equipe_nome: string | null; bitrix_user_id: string | null; bitrix_department_id: string | null; foto_url: string | null; paginas_acesso: string[]; ativo: boolean; criado_em: string; atualizado_em: string };
+        Insert: { id: string; nome: string; email: string; perfil?: PerfilUsuario; equipe_id?: string | null; equipe_nome?: string | null; bitrix_user_id?: string | null; bitrix_department_id?: string | null; foto_url?: string | null; paginas_acesso?: string[]; ativo?: boolean };
         Update: Partial<Database["public"]["Tables"]["usuarios"]["Insert"]>;
+        Relationships: [];
+      };
+      broker_exemptions: {
+        Row: { bitrix_id: string; broker_name: string; reason: string | null; created_by: string | null; created_at: string; updated_at: string };
+        Insert: { bitrix_id: string; broker_name: string; reason?: string | null; created_by?: string | null; created_at?: string; updated_at?: string };
+        Update: Partial<Database["public"]["Tables"]["broker_exemptions"]["Insert"]>;
         Relationships: [];
       };
       equipes: {

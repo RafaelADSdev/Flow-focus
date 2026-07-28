@@ -160,6 +160,7 @@ async function main() {
         equipe_nome: team.nome,
         bitrix_user_id: bitrixUserId,
         bitrix_department_id: group.departmentId,
+        foto_url: String(bitrixUser.PERSONAL_PHOTO ?? "").trim() || null,
         ativo: true,
       };
 

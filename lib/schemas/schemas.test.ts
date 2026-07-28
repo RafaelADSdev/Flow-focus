@@ -66,7 +66,7 @@ describe("schemas compartilhados", () => {
       perfil: "lider",
       esteira: "geral",
       equipeId: null,
-      paginasAcesso: ["/roletas", "/comercial-geral", "/auditorias", "/dashboard"],
+      paginasAcesso: ["/roletas", "/equipe", "/auditorias", "/dashboard"],
     });
 
     expect(result.success).toBe(false);
@@ -78,10 +78,20 @@ describe("schemas compartilhados", () => {
     expect(() => passwordFromBitrixId("13A6")).toThrow("ID do Bitrix inválido.");
   });
 
-  it("inclui o Comercial Geral apenas nos conjuntos padrão antigos", () => {
-    expect(normalizePaginasAcesso("lider", ["/roletas", "/auditorias", "/dashboard"]))
-      .toContain("/comercial-geral");
-    expect(normalizePaginasAcesso("lider", ["/roletas", "/dashboard"]))
-      .not.toContain("/comercial-geral");
+  it("remove rotas ocultas do conjunto salvo", () => {
+    expect(normalizePaginasAcesso("lider", ["/roletas", "/comercial-geral", "/auditorias", "/dashboard"]))
+      .toEqual(["/corretor", "/roletas", "/auditorias", "/dashboard"]);
+  });
+
+  it("mantém Minha carteira como entrada de todos os perfis", () => {
+    expect(normalizePaginasAcesso("lider", ["/equipe"]))
+      .toEqual(["/corretor", "/equipe"]);
+    expect(normalizePaginasAcesso("diretora", ["/dashboard"]))
+      .toEqual(["/corretor", "/dashboard"]);
+  });
+
+  it("não troca carteira vazia do corretor por outra página", () => {
+    expect(normalizePaginasAcesso("corretor", [])).toEqual(["/corretor"]);
+    expect(normalizePaginasAcesso("corretor", null)).toEqual(["/corretor"]);
   });
 });

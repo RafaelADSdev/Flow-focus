@@ -400,16 +400,22 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
         {broker.status === "auditoria" ? (
           <p className="permission-lock-note">Em auditoria — captura pausada; permissões valem após liberar.</p>
         ) : null}
-        <ul className="permission-card-list">
-          {data.roletas.map((roulette) => (
-            <li key={roulette.id}>
-              <span>
-                <strong>{roulette.nome}</strong>
-                <small>{roulette.disponiveis} oportunidades</small>
-              </span>
-              <span className="permission-toggle">{renderToggle(broker, roulette.id, roulette.nome)}</span>
-            </li>
-          ))}
+        <ul className="permission-roleta-grid">
+          {data.roletas.map((roulette) => {
+            const checked = selected[broker.id]?.includes(roulette.id) ?? false;
+            return (
+              <li
+                key={roulette.id}
+                className={`permission-roleta-tile${checked ? " is-checked" : ""}${locked ? " is-locked" : ""}`}
+              >
+                <span className="permission-roleta-tile-copy">
+                  <strong>{roulette.nome}</strong>
+                  <small>{roulette.disponiveis} oportunidades</small>
+                </span>
+                <span className="permission-toggle">{renderToggle(broker, roulette.id, roulette.nome)}</span>
+              </li>
+            );
+          })}
         </ul>
         {!locked && data.roletas.length > 1 ? (
           <div className="permission-card-actions">

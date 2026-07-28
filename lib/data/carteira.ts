@@ -15,7 +15,15 @@ const roletaSchema = z.object({
   id: z.string().uuid(),
   nome: z.string(),
   descricao: z.string(),
-  disponiveis: z.number().int().nonnegative(),
+  tem_disponiveis: z.boolean().optional(),
+  disponiveis: z.number().int().nonnegative().optional(),
+}).transform(({ disponiveis, tem_disponiveis, ...roleta }) => {
+  const count = Number(disponiveis ?? 0);
+  return {
+    ...roleta,
+    disponiveis: count,
+    tem_disponiveis: tem_disponiveis ?? count > 0,
+  };
 });
 
 const capturaSchema = z.object({
@@ -23,10 +31,14 @@ const capturaSchema = z.object({
   bitrix_deal_id: z.string(),
   titulo: z.string(),
   roleta: z.string(),
+  roleta_id: z.string().uuid().optional(),
   captada_em: z.string(),
   valor: z.number().nonnegative(),
   status: z.enum(["disponivel", "captada", "em_trabalho", "convertida", "perdida"]),
-});
+}).transform((captura) => ({
+  ...captura,
+  roleta_id: captura.roleta_id ?? "",
+}));
 
 const carteiraSchema = z.object({
   nome: z.string(),
@@ -63,6 +75,35 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
   const admin = createAdminClient();
   const today = new Date().toISOString().slice(0, 10);
 
+  const oportunidadesPromise = (async () => {
+    const rows: Array<{
+      id: string;
+      bitrix_deal_id: string;
+      titulo: string | null;
+      valor: number | null;
+      captada_em: string | null;
+      corretor_id: string | null;
+      roleta_id: string;
+      ultima_atualizacao_bitrix: string | null;
+      bitrix_stage_id: string | null;
+      roleta_atual: string | null;
+    }> = [];
+
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await admin
+        .from("oportunidades")
+        .select("id, bitrix_deal_id, titulo, valor, captada_em, corretor_id, roleta_id, ultima_atualizacao_bitrix, bitrix_stage_id, roleta_atual")
+        .order("id", { ascending: true })
+        .range(from, from + 999);
+      if (error) throw error;
+      if (!data?.length) break;
+      rows.push(...data);
+      if (data.length < 1000) break;
+    }
+
+    return rows;
+  })();
+
   const [
     usuarioResult,
     capturaResult,
@@ -76,7 +117,7 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
     admin.from("bloqueios").select("id").eq("corretor_id", userId).is("liberado_em", null).limit(1),
     admin.from("roletas_corretor").select("roleta_id").eq("corretor_id", userId),
     admin.from("roletas").select("id, nome, descricao, ativa").eq("ativa", true).order("nome"),
-    admin.from("oportunidades").select("id, bitrix_deal_id, titulo, valor, captada_em, corretor_id, roleta_id, ultima_atualizacao_bitrix, bitrix_stage_id, roleta_atual"),
+    oportunidadesPromise,
   ]);
 
   if (usuarioResult.error || !usuarioResult.data?.ativo) {
@@ -94,7 +135,7 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
 
   const roletaIds = new Set((atribuicoesResult.data ?? []).map((item) => item.roleta_id));
   const roletasAtivas = (roletasResult.data ?? []).filter((roleta) => roletaIds.has(roleta.id));
-  const oportunidades = oportunidadesResult.data ?? [];
+  const oportunidades = oportunidadesResult;
   const roletaNomePorId = new Map((roletasResult.data ?? []).map((roleta) => [roleta.id, roleta.nome]));
 
   const disponiveisPorRoleta = new Map<string, number>();
@@ -115,6 +156,7 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
       bitrix_deal_id: oportunidade.bitrix_deal_id,
       titulo: oportunidade.titulo ?? "Oportunidade sem título",
       roleta: roletaNomePorId.get(oportunidade.roleta_id) ?? "Roleta",
+      roleta_id: oportunidade.roleta_id,
       captada_em: oportunidade.captada_em!,
       valor: Number(oportunidade.valor ?? 0),
       status: mapOportunidadeStatus(oportunidade),
@@ -126,12 +168,16 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
     capturados,
     limite,
     estado_ciclo: estadoCiclo,
-    roletas: roletasAtivas.map((roleta) => ({
-      id: roleta.id,
-      nome: roleta.nome,
-      descricao: roleta.descricao ?? "",
-      disponiveis: disponiveisPorRoleta.get(roleta.id) ?? 0,
-    })),
+    roletas: roletasAtivas.map((roleta) => {
+      const disponiveis = disponiveisPorRoleta.get(roleta.id) ?? 0;
+      return {
+        id: roleta.id,
+        nome: roleta.nome,
+        descricao: roleta.descricao ?? "",
+        disponiveis,
+        tem_disponiveis: disponiveis > 0,
+      };
+    }),
     capturas_recentes: capturasRecentes,
     gerado_em: new Date().toISOString(),
   });

@@ -25,6 +25,7 @@ const dashboardSchema = z.object({
   ativos: z.number().int().nonnegative(),
   percentual_perdidos: z.number().nonnegative(),
   corretores_ativos_roleta: z.number().int().nonnegative(),
+  leads_criticos: z.number().int().nonnegative(),
   periodo_dias: z.number().int().positive(),
   gerado_em: z.string(),
   serie: z.array(z.object({
@@ -50,6 +51,19 @@ const dashboardSchema = z.object({
     ativos: z.number().int().nonnegative(),
     perdidos: z.number().int().nonnegative(),
   })),
+  corretores: z.array(z.object({
+    id: z.string(),
+    nome: z.string(),
+    equipe: z.string(),
+    foto_url: z.string().nullable(),
+    status: z.enum(["liberado", "auditoria", "bloqueado"]),
+    total: z.number().int().nonnegative(),
+    ativos: z.number().int().nonnegative(),
+    perdidos: z.number().int().nonnegative(),
+    criticos: z.number().int().nonnegative(),
+    roletas: z.array(z.string()),
+    ultima_atividade: z.string().nullable(),
+  })),
 });
 
 export type DashboardData = z.infer<typeof dashboardSchema>;
@@ -69,6 +83,7 @@ function emptyDashboard(filters: DashboardFilters): DashboardData {
     ativos: 0,
     percentual_perdidos: 0,
     corretores_ativos_roleta: 0,
+    leads_criticos: 0,
     periodo_dias: dashboardPeriodDays(filters),
     gerado_em: new Date().toISOString(),
     serie: [],
@@ -78,6 +93,7 @@ function emptyDashboard(filters: DashboardFilters): DashboardData {
     gargalo_total: 0,
     gargalo_percentual: 0,
     por_roleta: [],
+    corretores: [],
   });
 }
 
@@ -137,7 +153,7 @@ function matchesEsteira(
 }
 
 async function fetchAllOportunidades(admin: ReturnType<typeof createAdminClient>) {
-  const select = "id, captada_em, criado_em, data_criacao_bitrix, corretor_id, roleta_id, roleta_atual, bitrix_stage_id, ultima_atualizacao_bitrix";
+  const select = "id, captada_em, criado_em, data_criacao_bitrix, corretor_id, roleta_id, roleta_atual, bitrix_stage_id, bitrix_assigned_by_id, ultima_atualizacao_bitrix";
   const rows: Array<{
     id: string;
     captada_em: string | null;
@@ -147,21 +163,47 @@ async function fetchAllOportunidades(admin: ReturnType<typeof createAdminClient>
     roleta_id: string;
     roleta_atual: string | null;
     bitrix_stage_id: string | null;
+    bitrix_assigned_by_id: string | null;
     ultima_atualizacao_bitrix: string | null;
   }> = [];
+  const seen = new Set<string>();
 
   for (let from = 0; ; from += 1000) {
     const { data, error } = await admin
       .from("oportunidades")
       .select(select)
+      .order("id", { ascending: true })
       .range(from, from + 999);
     if (error) throw error;
     if (!data?.length) break;
-    rows.push(...data);
+    for (const row of data) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      rows.push(row);
+    }
     if (data.length < 1000) break;
   }
 
   return rows;
+}
+
+async function loadDashboardUsuarios(admin: ReturnType<typeof createAdminClient>) {
+  const withPhoto = await admin
+    .from("usuarios")
+    .select("id, nome, equipe_id, equipe_nome, bitrix_user_id, foto_url, ativo, perfil")
+    .eq("ativo", true);
+  if (!withPhoto.error) return withPhoto;
+  if (!withPhoto.error.message.includes("foto_url")) throw withPhoto.error;
+
+  const fallback = await admin
+    .from("usuarios")
+    .select("id, nome, equipe_id, equipe_nome, bitrix_user_id, ativo, perfil")
+    .eq("ativo", true);
+  if (fallback.error) throw fallback.error;
+  return {
+    data: (fallback.data ?? []).map((usuario) => ({ ...usuario, foto_url: null as string | null })),
+    error: null,
+  };
 }
 
 async function loadSharedDashboardContext(viewer: ViewerContext) {
@@ -176,13 +218,17 @@ async function loadSharedDashboardContext(viewer: ViewerContext) {
     roletasCorretorResult,
     equipesResult,
     perfilByUserId,
+    bloqueiosResult,
+    auditoriasResult,
   ] = await Promise.all([
-    admin.from("usuarios").select("id, nome, equipe_id, equipe_nome, ativo, perfil").eq("ativo", true),
+    loadDashboardUsuarios(admin),
     fetchAllOportunidades(admin),
     admin.from("roletas").select("id, nome, bitrix_category_id, bitrix_funil_id, bitrix_roleta_valor, ativa").eq("ativa", true),
     admin.from("roletas_corretor").select("corretor_id, roleta_id"),
     admin.from("equipes").select("id, nome, bitrix_diretoria_id").order("nome"),
     loadPerfilByUserId(admin),
+    admin.from("bloqueios").select("corretor_id").is("liberado_em", null),
+    admin.from("auditorias").select("corretor_id").eq("status", "pendente"),
   ]);
 
   const equipes = (equipesResult.data ?? []).filter((equipe) => inViewerScope(viewer, equipe.id));
@@ -199,6 +245,11 @@ async function loadSharedDashboardContext(viewer: ViewerContext) {
 
   const usuarioIds = new Set(usuarios.map((usuario) => usuario.id));
   const usuarioById = new Map(usuarios.map((usuario) => [usuario.id, usuario]));
+  const usuarioByBitrixId = new Map(
+    usuarios
+      .filter((usuario) => Boolean(usuario.bitrix_user_id))
+      .map((usuario) => [String(usuario.bitrix_user_id), usuario]),
+  );
 
   const roletas = roletasResult.data ?? [];
   const roletaById = new Map(roletas.map((roleta) => [roleta.id, roleta]));
@@ -210,11 +261,20 @@ async function loadSharedDashboardContext(viewer: ViewerContext) {
   )];
 
   const oportunidades = oportunidadesRows
-    .filter((item) => !item.corretor_id || usuarioIds.has(item.corretor_id))
-    .map((item) => ({
-      ...item,
-      status: mapOportunidadeStatus(item),
-    }));
+    .map((item) => {
+      const currentBroker = item.bitrix_assigned_by_id
+        ? usuarioByBitrixId.get(String(item.bitrix_assigned_by_id))
+        : null;
+      const normalized = {
+        ...item,
+        corretor_id: currentBroker?.id ?? (item.bitrix_assigned_by_id ? null : item.corretor_id),
+      };
+      return {
+        ...normalized,
+        status: mapOportunidadeStatus(normalized),
+      };
+    })
+    .filter((item) => !item.corretor_id || usuarioIds.has(item.corretor_id));
 
   const filterOptions: DashboardFilterOptions = {
     esteiras: [{
@@ -237,9 +297,14 @@ async function loadSharedDashboardContext(viewer: ViewerContext) {
     roletas: buildRoletaAtualOptions(oportunidades),
   };
 
+  const bloqueados = new Set((bloqueiosResult.data ?? []).map((item) => item.corretor_id));
+  const emAuditoria = new Set((auditoriasResult.data ?? []).map((item) => item.corretor_id));
+
   return {
     admin,
     comercialGeralCategoryId,
+    bloqueados,
+    emAuditoria,
     equipeById,
     equipeIdsForDiretoria,
     filterOptions,
@@ -429,6 +494,50 @@ async function loadDashboardFromTables(viewer: ViewerContext, filters: Dashboard
     .filter((item) => item.ativos + item.perdidos > 0)
     .sort((a, b) => (b.ativos + b.perdidos) - (a.ativos + a.perdidos) || a.nome.localeCompare(b.nome, "pt-BR"));
 
+  const criticalBefore = Date.now() - (3 * 86_400_000);
+  const corretores = context.usuarios
+    .filter((usuario) => !filters.corretor || usuario.id === filters.corretor)
+    .filter((usuario) => !filters.equipe || usuario.equipe_id === filters.equipe)
+    .filter((usuario) => {
+      if (!filters.diretoria) return true;
+      return Boolean(usuario.equipe_id && context.equipeIdsForDiretoria(filters.diretoria).has(usuario.equipe_id));
+    })
+    .map((usuario) => {
+      const items = noPeriodoEsteira.filter((item) => item.corretor_id === usuario.id);
+      const criticos = items.filter((item) => {
+        if (item.status === "perdida" || item.status === "convertida") return false;
+        const updatedAt = Date.parse(item.ultima_atualizacao_bitrix ?? entryDate(item));
+        return !Number.isNaN(updatedAt) && updatedAt <= criticalBefore;
+      }).length;
+      const ultimaAtividade = items.reduce<string | null>((latest, item) => {
+        const value = item.ultima_atualizacao_bitrix ?? entryDate(item);
+        return !latest || value > latest ? value : latest;
+      }, null);
+
+      return {
+        id: usuario.id,
+        nome: usuario.nome,
+        equipe: usuario.equipe_nome?.trim() || "Sem equipe",
+        foto_url: usuario.foto_url?.trim() || null,
+        status: context.bloqueados.has(usuario.id)
+          ? "bloqueado"
+          : context.emAuditoria.has(usuario.id)
+            ? "auditoria"
+            : "liberado",
+        total: items.length,
+        ativos: items.filter((item) => item.status !== "perdida").length,
+        perdidos: items.filter((item) => item.status === "perdida").length,
+        criticos,
+        roletas: [...new Set(items.map((item) => roletaAtualLabel(item.roleta_atual)).filter(Boolean) as string[])]
+          .sort((a, b) => a.localeCompare(b, "pt-BR")),
+        ultima_atividade: ultimaAtividade,
+      };
+    })
+    .filter((corretor) => corretor.total > 0 || !filters.roleta)
+    .sort((a, b) => b.criticos - a.criticos || b.ativos - a.ativos || a.nome.localeCompare(b.nome, "pt-BR"));
+
+  const leadsCriticos = corretores.reduce((total, corretor) => total + corretor.criticos, 0);
+
   const gargaloLabel = gargaloId
     ? (stageMeta.get(gargaloId)?.name ?? gargaloId.replace(/^C\d+:/, ""))
     : null;
@@ -439,6 +548,7 @@ async function loadDashboardFromTables(viewer: ViewerContext, filters: Dashboard
     ativos,
     percentual_perdidos: percentualPerdidos,
     corretores_ativos_roleta: corretoresComRoleta.size,
+    leads_criticos: leadsCriticos,
     periodo_dias: periodoDias,
     gerado_em: new Date().toISOString(),
     serie,
@@ -450,6 +560,7 @@ async function loadDashboardFromTables(viewer: ViewerContext, filters: Dashboard
       ? 0
       : Math.round((gargaloTotal / funilTotal) * 1000) / 10,
     por_roleta: porRoleta,
+    corretores,
   });
 }
 

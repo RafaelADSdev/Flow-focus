@@ -162,6 +162,7 @@ export async function syncBitrixPeople(): Promise<BitrixPeopleSyncSummary> {
         equipe_nome: team.nome,
         bitrix_user_id: bitrixUserId,
         bitrix_department_id: group.departmentId,
+        foto_url: String(bitrixUser.PERSONAL_PHOTO ?? "").trim() || null,
         ativo: true,
         ...(hasCustomPages ? {} : { paginas_acesso: defaultPaginasForPerfil(typedProfile) }),
       };
@@ -171,9 +172,9 @@ export async function syncBitrixPeople(): Promise<BitrixPeopleSyncSummary> {
         perfil: typedProfile,
       }, { onConflict: "id" });
 
-      if (userError?.message?.includes("perfil") || userError?.message?.includes("paginas_acesso")) {
-        const { paginas_acesso: _pages, ...withoutPages } = usuarioRow;
-        ({ error: userError } = await admin.from("usuarios").upsert(withoutPages, { onConflict: "id" }));
+      if (userError?.message?.includes("perfil") || userError?.message?.includes("paginas_acesso") || userError?.message?.includes("foto_url")) {
+        const { paginas_acesso: _pages, foto_url: _photo, ...withoutOptionalFields } = usuarioRow;
+        ({ error: userError } = await admin.from("usuarios").upsert(withoutOptionalFields, { onConflict: "id" }));
       }
       if (userError) throw userError;
 

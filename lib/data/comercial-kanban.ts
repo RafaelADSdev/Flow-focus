@@ -23,6 +23,7 @@ type OpportunityRow = {
   roleta_id: string;
   roleta_atual: string | null;
   bitrix_stage_id: string | null;
+  bitrix_assigned_by_id: string | null;
   captada_em: string | null;
   data_criacao_bitrix: string | null;
   ultima_atualizacao_bitrix: string | null;
@@ -43,14 +44,20 @@ function emptyData(filters: DashboardFilters): ComercialKanbanData {
 
 async function fetchAllOpportunities(admin: ReturnType<typeof createAdminClient>) {
   const rows: OpportunityRow[] = [];
+  const seen = new Set<string>();
   for (let from = 0; ; from += 1000) {
     const { data, error } = await admin
       .from("oportunidades")
-      .select("id, bitrix_deal_id, titulo, valor, corretor_id, roleta_id, roleta_atual, bitrix_stage_id, captada_em, data_criacao_bitrix, ultima_atualizacao_bitrix, criado_em")
+      .select("id, bitrix_deal_id, titulo, valor, corretor_id, roleta_id, roleta_atual, bitrix_stage_id, bitrix_assigned_by_id, captada_em, data_criacao_bitrix, ultima_atualizacao_bitrix, criado_em")
+      .order("id", { ascending: true })
       .range(from, from + 999);
     if (error) throw error;
     if (!data?.length) break;
-    rows.push(...data);
+    for (const row of data) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      rows.push(row);
+    }
     if (data.length < 1000) break;
   }
   return rows;
@@ -74,7 +81,7 @@ export async function getComercialKanbanData(filters: DashboardFilters): Promise
   const categoryId = process.env.BITRIX24_CAPTURE_CATEGORY_ID ?? "16";
   const directorateLabel = process.env.BITRIX24_DIRECTORATE_NAME ?? "Focus";
   const [usersResult, teamsResult, roulettesResult, opportunities, bitrixStages] = await Promise.all([
-    admin.from("usuarios").select("id, nome, equipe_id, equipe_nome, perfil, ativo").eq("ativo", true),
+    admin.from("usuarios").select("id, nome, equipe_id, equipe_nome, perfil, ativo, bitrix_user_id").eq("ativo", true),
     admin.from("equipes").select("id, nome, bitrix_diretoria_id").order("nome"),
     admin.from("roletas").select("id, bitrix_category_id").eq("ativa", true),
     fetchAllOpportunities(admin),
@@ -91,7 +98,11 @@ export async function getComercialKanbanData(filters: DashboardFilters): Promise
   const users = (usersResult.data ?? [])
     .filter((user) => user.perfil === "corretor" && Boolean(user.equipe_id && teamIds.has(user.equipe_id)));
   const userById = new Map(users.map((user) => [user.id, user]));
-  const userIds = new Set(users.map((user) => user.id));
+  const userByBitrixId = new Map(
+    users
+      .filter((user) => Boolean(user.bitrix_user_id))
+      .map((user) => [String(user.bitrix_user_id), user]),
+  );
   const commercialRouletteIds = new Set(
     (roulettesResult.data ?? [])
       .filter((roulette) => String(roulette.bitrix_category_id ?? "") === categoryId)
@@ -123,13 +134,16 @@ export async function getComercialKanbanData(filters: DashboardFilters): Promise
     const isCommercial = commercialRouletteIds.has(item.roleta_id)
       || String(item.bitrix_stage_id ?? "").startsWith(`C${categoryId}:`);
     if (!isCommercial) return false;
-    if (!item.corretor_id || !userIds.has(item.corretor_id)) return false;
-
-    const user = userById.get(item.corretor_id);
+    const user = item.bitrix_assigned_by_id
+      ? userByBitrixId.get(String(item.bitrix_assigned_by_id))
+      : item.corretor_id
+        ? userById.get(item.corretor_id)
+        : undefined;
+    if (!user) return false;
     const team = user?.equipe_id ? teamById.get(user.equipe_id) : null;
     const date = Date.parse(entryDate(item));
     if (Number.isNaN(date) || date < startTime || date > endTime) return false;
-    if (filters.corretor && item.corretor_id !== filters.corretor) return false;
+    if (filters.corretor && user.id !== filters.corretor) return false;
     if (filters.equipe && user?.equipe_id !== filters.equipe) return false;
     if (filters.diretoria && String(team?.bitrix_diretoria_id ?? "") !== filters.diretoria) return false;
     if (filters.roleta && rouletteLabel(item.roleta_atual) !== filters.roleta) return false;
@@ -142,7 +156,11 @@ export async function getComercialKanbanData(filters: DashboardFilters): Promise
   for (const item of filtered) {
     const stageId = stripStageSemanticSuffix(item.bitrix_stage_id);
     if (!stageId) continue;
-    const user = item.corretor_id ? userById.get(item.corretor_id) : null;
+    const user = item.bitrix_assigned_by_id
+      ? userByBitrixId.get(String(item.bitrix_assigned_by_id))
+      : item.corretor_id
+        ? userById.get(item.corretor_id)
+        : null;
     const cards = cardsByStage.get(stageId) ?? [];
     cards.push({
       id: item.id,
@@ -162,21 +180,24 @@ export async function getComercialKanbanData(filters: DashboardFilters): Promise
 
   const stageMeta = new Map(bitrixStages.map((stage) => [stage.id, stage]));
   const orderedIds = [
-    ...bitrixStages.map((stage) => stage.id),
-    ...[...cardsByStage.keys()].filter((id) => !stageMeta.has(id)).sort(),
+    ...new Set([
+      ...bitrixStages.map((stage) => stage.id),
+      ...[...cardsByStage.keys()].filter((id) => !stageMeta.has(id)).sort(),
+    ]),
   ];
   const stages = orderedIds.map((id) => {
     const meta = stageMeta.get(id);
+    const uniqueCards = new Map<string, ComercialKanbanCard>();
+    for (const card of cardsByStage.get(id) ?? []) {
+      uniqueCards.set(card.id, card);
+    }
     return {
       id,
       name: meta?.name ?? id.replace(/^C\d+:/, ""),
       semantics: meta?.semantics ?? null,
-      cards: (cardsByStage.get(id) ?? []).sort((a, b) => a.updatedAt.localeCompare(b.updatedAt)),
+      cards: [...uniqueCards.values()].sort((a, b) => a.updatedAt.localeCompare(b.updatedAt)),
     };
   });
 
-  const brokers = users
-    .map((user) => ({ id: user.id, name: user.nome, team: user.equipe_nome?.trim() || "Sem equipe" }))
-    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  return { filters, filterOptions, stages, total: filtered.length, canMove: bitrixStages.length > 0, brokers, generatedAt: new Date().toISOString() };
+  return { filters, filterOptions, stages, total: filtered.length, canMove: bitrixStages.length > 0, brokers: [], generatedAt: new Date().toISOString() };
 }

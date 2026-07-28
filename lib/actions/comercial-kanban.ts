@@ -18,6 +18,7 @@ const transferSchema = z.object({
   opportunityIds: z.array(z.string().uuid()).min(1).max(50),
   brokerId: z.string().uuid(),
 });
+const TRANSFER_FROM_COMERCIAL_ENABLED = false;
 
 export type MoveKanbanResult = { ok: true } | { ok: false; error: string };
 
@@ -127,6 +128,12 @@ export type TransferKanbanResult =
   | { ok: false; error: string };
 
 export async function transferComercialKanbanCards(input: unknown): Promise<TransferKanbanResult> {
+  if (!TRANSFER_FROM_COMERCIAL_ENABLED) {
+    return {
+      ok: false,
+      error: "A atribuição pelo Comercial Geral foi desativada. Use o fluxo de captação da Minha carteira.",
+    };
+  }
   const parsed = transferSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Transferência inválida." };
 

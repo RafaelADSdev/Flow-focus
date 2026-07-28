@@ -295,6 +295,7 @@ async function synchronizeTeamsAndUsers() {
         equipe_nome: team.nome,
         bitrix_user_id: bitrixUserId,
         bitrix_department_id: group.departmentId,
+        foto_url: String(bitrixUser.PERSONAL_PHOTO ?? "").trim() || null,
         ativo: true,
       }, { onConflict: "id" });
       if (userError) throw userError;
@@ -330,16 +331,21 @@ async function synchronizeTeamsAndUsers() {
 }
 
 async function synchronizeEligibleDeals() {
-  const first = await fetchEligiblePage(0);
-  const total = first.total ?? first.result!.length;
-  const starts = Array.from({ length: Math.max(0, Math.ceil(total / 50) - 1) }, (_, index) => (index + 1) * 50);
-  const deals = [...first.result!];
-  for (let index = 0; index < starts.length; index += 4) {
-    const pages = await Promise.all(starts.slice(index, index + 4).map(fetchEligiblePage));
-    pages.forEach((page) => deals.push(...page.result!));
+  const deals: JsonRecord[] = [];
+  let start: number | undefined = 0;
+  let reportedTotal: number | null = null;
+
+  while (start !== undefined) {
+    const page = await fetchEligiblePage(start);
+    if (reportedTotal === null && typeof page.total === "number") {
+      reportedTotal = page.total;
+    }
+    deals.push(...(page.result ?? []));
+    start = typeof page.next === "number" ? page.next : undefined;
   }
 
   const eligible = deals.filter(isEligible);
+  const total = reportedTotal ?? eligible.length;
   const { data: roulette, error: rouletteError } = await supabase.from("roletas").upsert({
     nome: poolName,
     bitrix_funil_id: `${categoryId}:${stageId}:${rouletteTag.toLocaleLowerCase()}`,
