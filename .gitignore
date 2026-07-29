@@ -7,6 +7,20 @@ coverage
 .vercel
 .netlify
 tmp/
+tmp-*.html
+# Fontes locais de logo (canonicos em public/brand/)
+/HUB ON COR.png
+/HubOn Branco.jpeg
+/Logo Claro.png
+/Logo Escuro.png
 supabase/.temp/
+
+.cursor/
+.codex/
+.impeccable/critique/
+.impeccable/live/
+.impeccable/surfaces/
+.sync-comercial-geral-progress.json
+*.code-workspace
 
 .vercel
