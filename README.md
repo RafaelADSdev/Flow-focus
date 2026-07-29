@@ -2,6 +2,20 @@
 
 Scaffold da plataforma de redistribuicao e auditoria de oportunidades comerciais da Diretoria Focus, integrado ao Bitrix24 e construído com Next.js, Supabase, TanStack Query, Zod e Recharts.
 
+## Sumario
+
+- [O que esta entrega inclui](#o-que-esta-entrega-inclui)
+- [Decisoes tecnicas](#decisoes-tecnicas)
+- [Suposicoes documentadas](#suposicoes-documentadas)
+- [Requisitos](#requisitos)
+- [Rodando localmente](#rodando-localmente)
+- [Banco, migration e tipos](#banco-migration-e-tipos)
+- [Edge Function do Bitrix24](#edge-function-do-bitrix24)
+- [Cerca virtual (geofencing)](#cerca-virtual-geofencing)
+- [Validacao](#validacao)
+- [Estrutura principal](#estrutura-principal)
+- [Proximos passos recomendados](#proximos-passos-recomendados)
+
 ## O que esta entrega inclui
 
 - App Router com telas de login, painel do corretor, configuracao de roletas, auditoria e produtividade.
@@ -34,7 +48,7 @@ As telas operacionais restantes ainda usam dados demonstrativos; o dashboard de 
 - O limite diario padrao e 6 e permanece um teto por dia. Aprovar uma auditoria remove o bloqueio e habilita o proximo lote quando ainda houver capacidade no dia ou no inicio do proximo dia; nao eleva silenciosamente o teto diario.
 - A importacao do Bitrix24 aceita somente negocios da categoria `36`, etapa `C36:NEW` ("Nova entrada") e cujo campo `UF_CRM_1726667595972` ("Roleta Atual") contenha a tag `Focus` em qualquer posicao.
 - O sync do Bolsão pagina pelo cursor `next` do Bitrix (não só por `total/50`) e reporta também o total Focus na category (qualquer etapa) para comparar com o Focus Analytics.
-- Todos os negocios elegiveis entram em uma unica roleta `Bolsao`; o valor completo de "Roleta Atual" permanece em `oportunidades.roleta_atual` para rastreabilidade.
+- Cada valor distinto de "Roleta Atual" gera sua propria roleta (chave canonica: minusculo, sem acento e sem espacos nas pontas), em vez de um bolsão monolítico. `oportunidades.roleta_atual` guarda o valor original do Bitrix para rastreabilidade, e `roletas.bitrix_roleta_valor` guarda a chave canonica usada para casar novas oportunidades com a roleta certa.
 - A URL em `BITRIX24_BASE_URL` inclui o caminho autenticado do webhook outbound quando necessario, por exemplo `https://conta.bitrix24.com.br/rest/usuario/token`.
 - Horarios de negocio e o `current_date` do limite seguem o timezone configurado no Postgres. Configure o projeto Supabase para `America/Sao_Paulo` antes da producao.
 - O scaffold usa senha minima de 6 caracteres localmente para acompanhar o padrao do Supabase CLI; producao deve usar 10+ caracteres e MFA para Diretora/Admin.
@@ -62,7 +76,10 @@ Depois de `npx supabase start`, copie a API URL e a publishable key exibidas pel
 
 ## Banco, migration e tipos
 
-A migration inicial esta em `supabase/migrations/20260722142912_initial_flow_focus_schema.sql`.
+A migration inicial esta em `supabase/migrations/20260722142912_initial_flow_focus_schema.sql`; as demais em `supabase/migrations/` sao incrementais e devem ser aplicadas em ordem cronologica pelo proprio CLI. Destaques recentes:
+
+- `20260729102000_bolsao_roleta_atual_permissions.sql` e `20260729120000_split_bolsao_by_roleta_atual.sql`: migram o bolsão monolítico para uma roleta por valor de "Roleta Atual", propagando as liberacoes de corretor existentes.
+- `20260729141135_geofence_sessions.sql`, `20260729143543_geofence_configuracao.sql` e `20260729151632_lock_down_geofence_rpcs.sql`: schema da cerca virtual e reforco de RLS/RPC (ver [Cerca virtual (geofencing)](#cerca-virtual-geofencing)).
 
 ```bash
 # Recriar o banco local, aplicar migration e seed
@@ -97,14 +114,20 @@ npx supabase secrets set BITRIX24_WEBHOOK_SECRET=um-segredo-forte
 npx supabase secrets set BITRIX24_BASE_URL=https://conta.bitrix24.com.br/rest/usuario/token
 npx supabase secrets set BITRIX24_FILTER_CATEGORY_ID=36
 npx supabase secrets set BITRIX24_FILTER_STAGE_ID=C36:NEW
+npx supabase secrets set BITRIX24_CAPTURE_CATEGORY_ID=16
+npx supabase secrets set BITRIX24_CAPTURE_STAGE_ID=C16:UC_PZR1SI
+npx supabase secrets set BITRIX24_CORRETOR_FIELD=UF_CRM_1726664928
 npx supabase secrets set BITRIX24_ROULETTE_FIELD=UF_CRM_1726667595972
 npx supabase secrets set BITRIX24_ROULETTE_TAG=Focus
 npx supabase secrets set BITRIX24_POOL_NAME=Bolsão
+npx supabase secrets set BITRIX24_COMERCIAL_SYNC_START_YEAR=2025
 npx supabase secrets set BITRIX24_SUPERINTENDENCY_DEPARTMENT_ID=444
 npx supabase secrets set BITRIX24_DIRECTORATE_DEPARTMENT_ID=442
 npx supabase secrets set BITRIX24_TEAM_DEPARTMENT_IDS=454,448,551
 npx supabase functions deploy bitrix-webhook --no-verify-jwt
 ```
+
+`BITRIX24_FILTER_*` define a origem do bolsão (Comercial Geral · Encaminhamento de leads); `BITRIX24_CAPTURE_*` define o destino ao captar (Comercial · GERAL · Tentativa de Contato). Todas essas variaveis tambem precisam existir em `.env.local` para os scripts locais (veja `.env.example`).
 
 O endpoint nao usa JWT porque o Bitrix24 e um sistema externo. Em vez disso, exige `x-flow-focus-secret`; mantenha o valor fora da URL sempre que o Bitrix permitir header customizado.
 
@@ -173,7 +196,7 @@ Depois que a migration estiver aplicada, um administrador pode alterar o ponto c
 
 `OFFICE_*`, `GEO_SESSION_SECONDS` e `GEO_SESSION_SECRET` sao exclusivamente server-side e nunca recebem o prefixo `NEXT_PUBLIC_`. Gere um segredo dedicado (por exemplo, `openssl rand -base64 32`); por compatibilidade, o servidor usa `SUPABASE_SECRET_KEY`/`SUPABASE_SERVICE_ROLE_KEY` como fallback. O projeto ja usa a publishable key atual do Supabase em `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, em vez da antiga anon key.
 
-As migrations `20260729141135_geofence_sessions.sql` e `20260729143543_geofence_configuracao.sql` precisam ser aplicadas no Supabase. Elas armazenam a sessao curta, o perimetro ativo e um historico privado das alteracoes; as coordenadas dos usuarios nunca sao persistidas. A primeira migration acrescenta policies RLS restritivas as tabelas expostas e revoga de `authenticated` as RPCs `SECURITY DEFINER` que contornariam RLS. As consultas sensiveis do app continuam no servidor Next.js com a secret key, depois do bloqueio no proxy:
+As migrations `20260729141135_geofence_sessions.sql`, `20260729143543_geofence_configuracao.sql` e `20260729151632_lock_down_geofence_rpcs.sql` precisam ser aplicadas no Supabase. As duas primeiras armazenam a sessao curta, o perimetro ativo e um historico privado das alteracoes; as coordenadas dos usuarios nunca sao persistidas. Juntas, elas acrescentam policies RLS restritivas as tabelas expostas e revogam de `anon`/`authenticated` as RPCs `SECURITY DEFINER` (`captar_oportunidade`, `concluir_auditoria`, `obter_carteira`, `obter_config_roletas`, `obter_painel_auditorias`) que contornariam RLS, mantendo o acesso apenas via `service_role`. As consultas sensiveis do app continuam no servidor Next.js com a secret key, depois do bloqueio no proxy:
 
 ```bash
 npx supabase db push
