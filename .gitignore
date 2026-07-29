@@ -20,6 +20,7 @@ supabase/.temp/
 .impeccable/critique/
 .impeccable/live/
 .impeccable/surfaces/
+.impeccable/design.json
 .sync-comercial-geral-progress.json
 *.code-workspace
 
