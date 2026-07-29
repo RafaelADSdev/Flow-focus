@@ -1,6 +1,8 @@
 import "server-only";
 
 import { bitrixCallPage, hasBitrixEnv } from "@/lib/bitrix/client";
+import { getBolsaoSyncDefaults } from "@/lib/bitrix/bolsao-roleta";
+import { upsertBolsaoRoletasBatch } from "@/lib/bitrix/upsert-bolsao-roleta";
 import type { StatusOportunidade } from "@/lib/database.types";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -21,12 +23,10 @@ function chunks<T>(items: T[], size: number) {
 }
 
 function getSyncConfig() {
+  const defaults = getBolsaoSyncDefaults();
   return {
-    categoryId: process.env.BITRIX24_FILTER_CATEGORY_ID ?? "36",
-    stageId: process.env.BITRIX24_FILTER_STAGE_ID ?? "C36:NEW",
+    ...defaults,
     rouletteField: process.env.BITRIX24_ROULETTE_FIELD ?? "UF_CRM_1726667595972",
-    rouletteTag: process.env.BITRIX24_ROULETTE_TAG ?? process.env.BITRIX24_ROULETTE_SUFFIX ?? "Focus",
-    poolName: process.env.BITRIX24_POOL_NAME ?? "Bolsão",
   };
 }
 
@@ -126,6 +126,46 @@ async function countFocusInCategory(config: ReturnType<typeof getSyncConfig>) {
   }
 }
 
+async function removeStaleFromQueue(
+  admin: ReturnType<typeof createAdminClient>,
+  categoryId: string,
+  syncedIds: Set<string>,
+) {
+  const { data: bolsaoRoletas, error: roletasError } = await admin
+    .from("roletas")
+    .select("id")
+    .eq("bitrix_category_id", categoryId)
+    .eq("ativa", true);
+
+  if (roletasError || !bolsaoRoletas?.length) return 0;
+
+  const roletaIds = bolsaoRoletas.map((item) => item.id);
+  const { data: stillAvailable, error: availableError } = await admin
+    .from("oportunidades")
+    .select("id,bitrix_deal_id")
+    .in("roleta_id", roletaIds)
+    .is("corretor_id", null)
+    .is("captada_em", null);
+
+  if (availableError || !stillAvailable) return 0;
+
+  const staleIds = stillAvailable
+    .filter((item) => item.bitrix_deal_id && !syncedIds.has(item.bitrix_deal_id))
+    .map((item) => item.id);
+
+  if (!staleIds.length) return 0;
+
+  for (const batch of chunks(staleIds, 250)) {
+    let { error } = await admin.from("oportunidades").update({ status: "perdida" }).in("id", batch);
+    if (error?.message.includes("status")) {
+      ({ error } = await admin.from("oportunidades").delete().in("id", batch));
+    }
+    if (error) throw error;
+  }
+
+  return staleIds.length;
+}
+
 let syncInFlight: Promise<BitrixDealsSyncSummary> | null = null;
 
 export async function syncBitrixDeals(): Promise<BitrixDealsSyncSummary> {
@@ -158,16 +198,8 @@ async function runSyncBitrixDeals(): Promise<BitrixDealsSyncSummary> {
   const eligible = deals.filter((deal) => isEligible(deal, config));
   const total = reportedTotal ?? eligible.length;
 
-  const { data: roulette, error: rouletteError } = await admin.from("roletas").upsert({
-    nome: config.poolName,
-    bitrix_funil_id: `${config.categoryId}:${config.stageId}:${config.rouletteTag.toLocaleLowerCase()}`,
-    bitrix_category_id: config.categoryId,
-    bitrix_roleta_valor: config.rouletteTag,
-    descricao: `Negócios em ${config.stageId} cuja Roleta Atual contém ${config.rouletteTag}`,
-    ativa: true,
-  }, { onConflict: "bitrix_funil_id" }).select("id").single();
-
-  if (rouletteError) throw rouletteError;
+  const roletaAtualValues = eligible.map((deal) => rouletteValue(deal, config.rouletteField));
+  const roletaIdByValor = await upsertBolsaoRoletasBatch(admin, roletaAtualValues, config);
 
   const dealIds = eligible.map((deal) => String(deal.ID));
   const existingRows = (await Promise.all(chunks(dealIds, 300).map(async (ids) => {
@@ -194,9 +226,14 @@ async function runSyncBitrixDeals(): Promise<BitrixDealsSyncSummary> {
   const opportunities = eligible.map((deal) => {
     const dealId = String(deal.ID);
     const value = rouletteValue(deal, config.rouletteField);
+    const roletaId = roletaIdByValor.get(value);
+    if (!roletaId) {
+      throw new Error(`Roleta não resolvida para valor: ${value}`);
+    }
+
     return {
       bitrix_deal_id: dealId,
-      roleta_id: roulette.id,
+      roleta_id: roletaId,
       titulo: String(deal.TITLE ?? `Negocio #${dealId}`),
       valor: Number(deal.OPPORTUNITY ?? 0),
       status: opportunityStatus(deal, config, existingOpportunities.get(dealId)),
@@ -217,38 +254,15 @@ async function runSyncBitrixDeals(): Promise<BitrixDealsSyncSummary> {
     if (error) throw error;
   }));
 
-  let removidosDaFila = 0;
   const syncedIds = new Set(dealIds);
-  const { data: stillAvailable, error: availableError } = await admin
-    .from("oportunidades")
-    .select("id,bitrix_deal_id")
-    .eq("roleta_id", roulette.id)
-    .is("corretor_id", null)
-    .is("captada_em", null);
-
-  if (!availableError && stillAvailable) {
-    const staleIds = stillAvailable
-      .filter((item) => item.bitrix_deal_id && !syncedIds.has(item.bitrix_deal_id))
-      .map((item) => item.id);
-
-    if (staleIds.length) {
-      for (const batch of chunks(staleIds, 250)) {
-        let { error } = await admin.from("oportunidades").update({ status: "perdida" }).in("id", batch);
-        if (error?.message.includes("status")) {
-          ({ error } = await admin.from("oportunidades").delete().in("id", batch));
-        }
-        if (error) throw error;
-      }
-      removidosDaFila = staleIds.length;
-    }
-  }
+  const removidosDaFila = await removeStaleFromQueue(admin, config.categoryId, syncedIds);
 
   return {
     encontrados: total,
     importados: eligible.length,
     ignorados: deals.length - eligible.length,
     removidosDaFila,
-    roletas: 1,
+    roletas: roletaIdByValor.size,
     focusNaCategory,
   };
 }

@@ -46,7 +46,7 @@ describe("schemas compartilhados", () => {
       perfil: "admin",
       esteira: "geral",
       equipeId: null,
-      paginasAcesso: ["/dashboard", "/configuracoes"],
+      paginasAcesso: ["/roletas", "/configuracoes"],
     }).success).toBe(true);
 
     expect(editarAcessoSchema.safeParse({
@@ -55,7 +55,7 @@ describe("schemas compartilhados", () => {
       perfil: "admin",
       esteira: "geral",
       equipeId: null,
-      paginasAcesso: ["/dashboard", "/configuracoes"],
+      paginasAcesso: ["/roletas", "/configuracoes"],
     }).success).toBe(true);
   });
 
@@ -66,7 +66,7 @@ describe("schemas compartilhados", () => {
       perfil: "lider",
       esteira: "geral",
       equipeId: null,
-      paginasAcesso: ["/roletas", "/equipe", "/auditorias", "/dashboard"],
+      paginasAcesso: ["/roletas", "/equipe", "/auditorias"],
     });
 
     expect(result.success).toBe(false);
@@ -80,14 +80,14 @@ describe("schemas compartilhados", () => {
 
   it("remove rotas ocultas do conjunto salvo", () => {
     expect(normalizePaginasAcesso("lider", ["/roletas", "/comercial-geral", "/auditorias", "/dashboard"]))
-      .toEqual(["/corretor", "/roletas", "/auditorias", "/dashboard"]);
+      .toEqual(["/corretor", "/roletas", "/auditorias"]);
   });
 
   it("mantém Minha carteira como entrada de todos os perfis", () => {
     expect(normalizePaginasAcesso("lider", ["/equipe"]))
       .toEqual(["/corretor", "/equipe"]);
     expect(normalizePaginasAcesso("diretora", ["/dashboard"]))
-      .toEqual(["/corretor", "/dashboard"]);
+      .toEqual(["/corretor", "/roletas", "/equipe", "/auditorias"]);
   });
 
   it("não troca carteira vazia do corretor por outra página", () => {

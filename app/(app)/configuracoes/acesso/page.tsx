@@ -23,9 +23,9 @@ export default async function AccessManagementPage() {
           </div>
           <p>Crie, edite ou desative acessos. Ajuste a visão, a esteira e a equipe de cada usuário.</p>
         </div>
-        <Link href="/dashboard" className="button button-secondary admin-back">
+        <Link href="/configuracoes" className="button button-secondary admin-back">
           <ArrowLeft size={16} />
-          Voltar ao dashboard
+          Voltar às configurações
         </Link>
       </header>
       <AccessManagementPanel

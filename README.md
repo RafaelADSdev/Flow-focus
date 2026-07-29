@@ -153,6 +153,36 @@ Na aplicação, a sincronização do Comercial Geral cobre por padrão o ano atu
 
 `usuarios.equipe_id` preserva a chave estrangeira, enquanto `usuarios.equipe_nome` mostra diretamente o nome legivel da equipe. Triggers mantem os dois campos consistentes e propagam futuras alteracoes no nome da equipe.
 
+## Cerca virtual (geofencing)
+
+As rotas operacionais (`/corretor`, `/roletas`, `/equipe`, `/auditorias`, as configuracoes sensiveis, `/dashboard` e `/comercial-geral`) exigem uma geo-sessao valida. O indice `/configuracoes` e `/configuracoes/localizacao` sao as excecoes administrativas de recuperacao. Quando a sessao nao existe ou expirou, `proxy.ts` redireciona para `/verificar-localizacao` antes da renderizacao dos Server Components; isso evita enviar os dados protegidos no HTML ou no payload RSC. O mesmo proxy devolve `403` em JSON para qualquer rota sob `/api/dados/*` sem geo-sessao.
+
+O navegador monitora a posicao com `watchPosition` e o servidor calcula a distancia pela formula de Haversine. Uma validacao aprovada cria um cookie `geo_sessao` assinado, `httpOnly`, `Secure`, `SameSite=Strict` e com expiracao curta. O heartbeat renova a sessao apenas enquanto a ultima posicao continua valida. Se GPS, permissao ou rede falharem, a UI fecha imediatamente; cookie e sessao de banco expiram em ate `GEO_SESSION_SECONDS`.
+
+Configure localmente em `.env.local` e repita na Vercel em **Project Settings -> Environment Variables**, para **Production** e **Preview**:
+
+```dotenv
+OFFICE_LAT=latitude-do-escritorio
+OFFICE_LNG=longitude-do-escritorio
+OFFICE_RADIUS_METERS=150
+GEO_SESSION_SECONDS=30
+GEO_SESSION_SECRET=segredo-aleatorio-com-32-ou-mais-caracteres
+```
+
+Depois que a migration estiver aplicada, um administrador pode alterar o ponto central e o raio em **Configuracoes -> Localizacao do escritorio**. A configuracao salva no Supabase tem prioridade sobre `OFFICE_LAT`, `OFFICE_LNG` e `OFFICE_RADIUS_METERS`; as variaveis continuam como fallback de bootstrap. A pagina de localizacao e o indice de configuracoes nao exigem uma geo-sessao previa, mas continuam protegidos por autenticacao e perfil `admin`, evitando que uma configuracao ausente bloqueie a propria recuperacao do perimetro.
+
+`OFFICE_*`, `GEO_SESSION_SECONDS` e `GEO_SESSION_SECRET` sao exclusivamente server-side e nunca recebem o prefixo `NEXT_PUBLIC_`. Gere um segredo dedicado (por exemplo, `openssl rand -base64 32`); por compatibilidade, o servidor usa `SUPABASE_SECRET_KEY`/`SUPABASE_SERVICE_ROLE_KEY` como fallback. O projeto ja usa a publishable key atual do Supabase em `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, em vez da antiga anon key.
+
+As migrations `20260729141135_geofence_sessions.sql` e `20260729143543_geofence_configuracao.sql` precisam ser aplicadas no Supabase. Elas armazenam a sessao curta, o perimetro ativo e um historico privado das alteracoes; as coordenadas dos usuarios nunca sao persistidas. A primeira migration acrescenta policies RLS restritivas as tabelas expostas e revoga de `authenticated` as RPCs `SECURITY DEFINER` que contornariam RLS. As consultas sensiveis do app continuam no servidor Next.js com a secret key, depois do bloqueio no proxy:
+
+```bash
+npx supabase db push
+```
+
+Nao foi usado um claim booleano no JWT: ele poderia continuar verdadeiro durante toda a vida do access token. A sessao curta no banco permite que RLS compare `expires_at` com `now()` sem depender de refresh de JWT a cada 15 segundos. A Geolocation API requer HTTPS (a Vercel ja fornece) ou `localhost`.
+
+Importante: coordenadas entregues pelo navegador podem ser simuladas por software ou por um dispositivo comprometido. A implementacao impede bypass por UI, cookie editado, chamada direta ao Data API e expiração esquecida, mas geofencing web nao equivale a atestacao de hardware antifraude.
+
 ## Validacao
 
 ```bash

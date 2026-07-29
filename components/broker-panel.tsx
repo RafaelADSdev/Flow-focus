@@ -17,7 +17,6 @@ import type { CarteiraData } from "@/lib/types/carteira";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { StatusBadge } from "./status-badge";
 
-const roletaTones = ["violet", "teal", "amber"] as const;
 const AUTO_SYNC_MS = 5 * 60 * 1000;
 
 const statusLabels: Record<CarteiraData["capturas_recentes"][number]["status"], string> = {
@@ -54,19 +53,6 @@ function dealUrl(portalBase: string, dealId: string) {
   return `${portalBase}/crm/deal/details/${encodeURIComponent(id)}/`;
 }
 
-function toneForRoleta(id: string) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i += 1) {
-    hash = (hash + id.charCodeAt(i) * (i + 1)) % 997;
-  }
-  return roletaTones[hash % roletaTones.length];
-}
-
-function defaultRoletaId(roletas: CarteiraData["roletas"]) {
-  const withStock = roletas.find((item) => item.tem_disponiveis);
-  return withStock?.id ?? roletas[0]?.id ?? null;
-}
-
 function captureGateLabel(estadoCiclo: CarteiraData["estado_ciclo"], capturados: number, limite: number) {
   if (estadoCiclo === "bloqueado") {
     return {
@@ -92,15 +78,6 @@ function captureGateLabel(estadoCiclo: CarteiraData["estado_ciclo"], capturados:
   return null;
 }
 
-function capturaMatchesRoleta(
-  captura: CarteiraData["capturas_recentes"][number],
-  roletaId: string,
-  roletaNome: string,
-) {
-  if (roletaId && captura.roleta_id) return captura.roleta_id === roletaId;
-  return captura.roleta === roletaNome;
-}
-
 export function BrokerPanel({
   data,
   bitrixPortalBase = "",
@@ -110,7 +87,7 @@ export function BrokerPanel({
 }) {
   const router = useRouter();
   const cycleStatusId = useId();
-  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [capturing, setCapturing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [isRefreshing, startRefresh] = useTransition();
   const [lastSyncedAt, setLastSyncedAt] = useState(data.gerado_em);
@@ -121,14 +98,13 @@ export function BrokerPanel({
   const [cyclePulse, setCyclePulse] = useState(false);
   const [highlightDealId, setHighlightDealId] = useState<string | null>(null);
   const [progressReady, setProgressReady] = useState(false);
-  const [selectedRoletaId, setSelectedRoletaId] = useState<string | null>(() => defaultRoletaId(data.roletas));
-  const [showAllCapturas, setShowAllCapturas] = useState(false);
   const syncingRef = useRef(false);
   const prevCapturadosRef = useRef(data.capturados);
   const prevEstadoRef = useRef(data.estado_ciclo);
 
   const { capturados, limite, estado_ciclo: estadoCiclo, roletas, capturas_recentes: capturasRecentes } = data;
-  const selectedRoleta = roletas.find((item) => item.id === selectedRoletaId) ?? null;
+  const totalDisponiveis = roletas.reduce((sum, item) => sum + item.disponiveis, 0);
+  const temDisponiveis = totalDisponiveis > 0;
   const restante = Math.max(0, limite - capturados);
   const cicloLiberado = estadoCiclo === "captacao_liberada";
   const limiteDiarioAtingido = capturados >= limite;
@@ -145,24 +121,12 @@ export function BrokerPanel({
           ? `Você ainda pode captar ${restante} oportunidade${restante === 1 ? "" : "s"}.`
           : "Lote completo. Trabalhe a carteira e aguarde a auditoria.";
 
-  const filteredCapturas =
-    showAllCapturas || !selectedRoleta
-      ? capturasRecentes
-      : capturasRecentes.filter((item) =>
-          capturaMatchesRoleta(item, selectedRoleta.id, selectedRoleta.nome),
-        );
-
-  const isPageBusy = syncing || loadingId !== null || isRefreshing;
+  const isPageBusy = syncing || capturing || isRefreshing;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => setProgressReady(true));
     return () => window.cancelAnimationFrame(frame);
   }, []);
-
-  useEffect(() => {
-    if (selectedRoletaId && roletas.some((item) => item.id === selectedRoletaId)) return;
-    setSelectedRoletaId(defaultRoletaId(roletas));
-  }, [roletas, selectedRoletaId]);
 
   useEffect(() => {
     if (capturados > prevCapturadosRef.current) {
@@ -238,15 +202,15 @@ export function BrokerPanel({
     return () => window.clearInterval(timer);
   }, [syncLeads]);
 
-  async function capture(id: string) {
-    setLoadingId(id);
+  async function capture() {
+    setCapturing(true);
     setMessage("");
     setMessageLink(null);
     setError("");
 
-    const result = await captarOportunidade({ roletaId: id });
+    const result = await captarOportunidade();
 
-    setLoadingId(null);
+    setCapturing(false);
 
     if (!result.ok) {
       setError(result.error);
@@ -261,12 +225,11 @@ export function BrokerPanel({
     );
     setMessageLink(link);
     if (result.bitrixDealId) setHighlightDealId(result.bitrixDealId);
-    setShowAllCapturas(false);
     refreshData();
   }
 
-  function renderCaptureLabel(roulette: CarteiraData["roletas"][number]): ReactNode {
-    if (loadingId === roulette.id) {
+  function renderCaptureLabel(): ReactNode {
+    if (capturing) {
       return (
         <>
           <RefreshCw size={16} className="spin" aria-hidden />
@@ -290,10 +253,10 @@ export function BrokerPanel({
     );
   }
 
-  function captureButtonTitle(roulette: CarteiraData["roletas"][number]) {
+  function captureButtonTitle() {
     if (gate) return gate.title;
     if (syncing) return "Aguarde a sincronização terminar.";
-    if (!roulette.tem_disponiveis) return "Sem oportunidades nesta roleta. Tente outra ou sincronize.";
+    if (!temDisponiveis) return "Sem oportunidades na fila. Tente sincronizar ou aguarde novos leads.";
     return undefined;
   }
 
@@ -303,7 +266,7 @@ export function BrokerPanel({
         <div className="page-busy-bar" role="status" aria-live="polite">
           <RefreshCw size={14} className="is-spinning" aria-hidden="true" />
           <span>
-            {loadingId ? "Captando oportunidade…" : syncing ? "Sincronizando leads…" : "Atualizando carteira…"}
+            {capturing ? "Captando oportunidade…" : syncing ? "Sincronizando leads…" : "Atualizando carteira…"}
           </span>
         </div>
       ) : null}
@@ -385,11 +348,15 @@ export function BrokerPanel({
         </p>
       ) : null}
 
-      <section className="section-block" aria-labelledby="broker-roletas-heading">
+      <section className="section-block" aria-labelledby="broker-captura-heading">
         <div className="section-heading">
           <div>
-            <h2 id="broker-roletas-heading">Roletas disponíveis</h2>
-            <p>Selecione a roleta e capture a próxima oportunidade da fila.</p>
+            <h2 id="broker-captura-heading">Captar oportunidade</h2>
+            <p>
+              {temDisponiveis
+                ? `${totalDisponiveis} oportunidade${totalDisponiveis === 1 ? "" : "s"} na fila. A próxima disponível será atribuída a você.`
+                : "Sem oportunidades na fila no momento."}
+            </p>
           </div>
           <div className="sync-control">
             <button
@@ -409,82 +376,32 @@ export function BrokerPanel({
         </div>
 
         {roletas.length ? (
-          <>
-            <div className="roulette-grid" role="listbox" aria-label="Roletas liberadas" aria-activedescendant={selectedRoletaId ?? undefined}>
-              {roletas.map((roulette) => {
-                const selected = selectedRoletaId === roulette.id;
-                const tone = toneForRoleta(roulette.id);
-                return (
-                  <button
-                    type="button"
-                    key={roulette.id}
-                    role="option"
-                    aria-selected={selected}
-                    className={`roulette-card signal-${tone}${selected ? " is-selected" : ""}${!roulette.tem_disponiveis ? " is-empty" : ""}`}
-                    onClick={() => {
-                      setSelectedRoletaId(roulette.id);
-                      setShowAllCapturas(false);
-                    }}
-                  >
-                    <span className={`roulette-signal signal-${tone}`} aria-hidden>
-                      <Inbox size={18} />
-                    </span>
-                    <span className="roulette-card-copy">
-                      <strong>{roulette.nome}</strong>
-                      <small>{roulette.descricao || "Sem descrição cadastrada."}</small>
-                    </span>
-                    <span className="available-count">
-                      <strong className="available-count-value">{roulette.disponiveis}</strong>
-                      <span>na fila</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {selectedRoleta ? (
-              <div className={`roulette-capture-panel${loadingId === selectedRoleta.id ? " is-claiming" : ""}`}>
-                <div className="roulette-capture-copy">
-                  <strong>{selectedRoleta.nome}</strong>
-                  <p>
-                    {selectedRoleta.disponiveis > 0
-                      ? `${selectedRoleta.disponiveis} oportunidade${selectedRoleta.disponiveis === 1 ? "" : "s"} disponível${selectedRoleta.disponiveis === 1 ? "" : "eis"} nesta roleta.`
-                      : "Sem oportunidades nesta roleta no momento."}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className={`button ${
-                    cicloLiberado &&
-                    !limiteDiarioAtingido &&
-                    selectedRoleta.tem_disponiveis &&
-                    loadingId === null &&
-                    !syncing &&
-                    !isRefreshing
-                      ? "button-primary"
-                      : "button-secondary"
-                  }`}
-                  disabled={
-                    captacaoTravada ||
-                    loadingId !== null ||
-                    syncing ||
-                    isRefreshing ||
-                    !selectedRoleta.tem_disponiveis
-                  }
-                  title={captureButtonTitle(selectedRoleta)}
-                  aria-describedby={gate ? cycleStatusId : undefined}
-                  onClick={() => capture(selectedRoleta.id)}
-                >
-                  {renderCaptureLabel(selectedRoleta)}
-                </button>
-              </div>
-            ) : null}
-          </>
+          <div className={`broker-capture-panel${capturing ? " is-claiming" : ""}`}>
+            <button
+              type="button"
+              className={`button ${
+                cicloLiberado &&
+                !limiteDiarioAtingido &&
+                temDisponiveis &&
+                !capturing &&
+                !syncing &&
+                !isRefreshing
+                  ? "button-primary"
+                  : "button-secondary"
+              }`}
+              disabled={captacaoTravada || capturing || syncing || isRefreshing || !temDisponiveis}
+              title={captureButtonTitle()}
+              aria-describedby={gate ? cycleStatusId : undefined}
+              onClick={() => void capture()}
+            >
+              {renderCaptureLabel()}
+            </button>
+          </div>
         ) : (
           <div className="empty-state">
             <Inbox size={24} aria-hidden />
-            <h3>Nenhuma roleta liberada</h3>
-            <p>Quando a liderança liberar campanhas para você, elas aparecerão aqui para captação.</p>
+            <h3>Captação ainda não liberada</h3>
+            <p>Quando a liderança liberar captação para você, o botão aparecerá aqui.</p>
           </div>
         )}
       </section>
@@ -493,34 +410,20 @@ export function BrokerPanel({
         <div className="section-heading">
           <div>
             <h2 id="broker-capturas-heading">Capturas recentes</h2>
-            <p>
-              {selectedRoleta && !showAllCapturas
-                ? `Mostrando capturas da roleta ${selectedRoleta.nome}.`
-                : "Continue o atendimento e os registros diretamente no Bitrix24."}
-            </p>
+            <p>Continue o atendimento e os registros diretamente no Bitrix24.</p>
           </div>
-          {selectedRoleta && capturasRecentes.length > 0 ? (
-            <button
-              type="button"
-              className="button button-quiet"
-              onClick={() => setShowAllCapturas((value) => !value)}
-            >
-              {showAllCapturas ? "Filtrar por roleta" : "Ver todas as roletas"}
-            </button>
-          ) : null}
         </div>
 
-        {filteredCapturas.length ? (
-          <div className="data-table" role="table" aria-label="Capturas recentes">
+        {capturasRecentes.length ? (
+          <div className="data-table broker-capturas-table" role="table" aria-label="Capturas recentes">
             <div className="table-head" role="row">
               <span role="columnheader">Oportunidade</span>
-              <span role="columnheader">Roleta</span>
               <span role="columnheader">Captada em</span>
               <span role="columnheader">Valor estimado</span>
               <span role="columnheader">Status</span>
               <span role="columnheader">Bitrix</span>
             </div>
-            {filteredCapturas.map((item) => {
+            {capturasRecentes.map((item) => {
               const link = dealUrl(bitrixPortalBase, item.bitrix_deal_id);
               const isFresh = highlightDealId !== null && item.bitrix_deal_id === highlightDealId;
               return (
@@ -529,7 +432,6 @@ export function BrokerPanel({
                     <strong>{item.titulo}</strong>
                     <small>#{item.bitrix_deal_id}</small>
                   </span>
-                  <span role="cell" data-label="Roleta">{item.roleta}</span>
                   <span role="cell" data-label="Captada em">{formatDate(item.captada_em)}</span>
                   <span role="cell" data-label="Valor">{formatCurrency(item.valor)}</span>
                   <span role="cell" data-label="Status">
@@ -558,16 +460,8 @@ export function BrokerPanel({
         ) : (
           <div className="empty-state">
             <Clock3 size={24} aria-hidden />
-            <h3>
-              {showAllCapturas || !selectedRoleta
-                ? "Nenhuma captura recente"
-                : "Nenhuma captura nesta roleta"}
-            </h3>
-            <p>
-              {showAllCapturas || !selectedRoleta
-                ? "As oportunidades que você captar aparecerão aqui com os dados sincronizados do Bitrix24."
-                : "Selecione outra roleta ou capture uma nova oportunidade."}
-            </p>
+            <h3>Nenhuma captura recente</h3>
+            <p>As oportunidades que você captar aparecerão aqui com os dados sincronizados do Bitrix24.</p>
           </div>
         )}
       </section>

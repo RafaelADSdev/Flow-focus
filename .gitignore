@@ -7,5 +7,6 @@ coverage
 .vercel
 .netlify
 tmp/
+supabase/.temp/
 
 .vercel

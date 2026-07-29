@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { greetingForName } from "@/lib/greeting";
 
 export function PageGreeting({ nome }: { nome: string }) {
-  const [greeting, setGreeting] = useState(() => greetingForName(nome));
+  const firstName = nome.trim().split(/\s+/)[0] ?? nome;
+  const [greeting, setGreeting] = useState<string | null>(null);
 
   useEffect(() => {
     setGreeting(greetingForName(nome));
@@ -12,5 +13,5 @@ export function PageGreeting({ nome }: { nome: string }) {
     return () => window.clearInterval(interval);
   }, [nome]);
 
-  return <p className="page-greeting">{greeting}</p>;
+  return <p className="page-greeting">{greeting ?? `Olá, ${firstName}`}</p>;
 }

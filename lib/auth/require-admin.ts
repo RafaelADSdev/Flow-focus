@@ -33,7 +33,7 @@ export async function requireAdmin(redirectTo: Route = "/configuracoes") {
     paginasAcesso: profile.paginasAcesso,
   };
 
-  return user;
+  return { ...user, id: authUser.id };
 }
 
 export async function isAdmin() {

@@ -19,7 +19,6 @@ const captureCategoryId = Deno.env.get("BITRIX24_CAPTURE_CATEGORY_ID") ?? "16";
 const stageId = Deno.env.get("BITRIX24_FILTER_STAGE_ID") ?? "C36:NEW";
 const rouletteField = Deno.env.get("BITRIX24_ROULETTE_FIELD") ?? "UF_CRM_1726667595972";
 const rouletteTag = Deno.env.get("BITRIX24_ROULETTE_TAG") ?? Deno.env.get("BITRIX24_ROULETTE_SUFFIX") ?? "Focus";
-const poolName = Deno.env.get("BITRIX24_POOL_NAME") ?? "Bolsão";
 const superintendencyDepartmentId = Deno.env.get("BITRIX24_SUPERINTENDENCY_DEPARTMENT_ID") ?? "444";
 const directorateDepartmentId = Deno.env.get("BITRIX24_DIRECTORATE_DEPARTMENT_ID") ?? "442";
 const teamDepartmentIds = (Deno.env.get("BITRIX24_TEAM_DEPARTMENT_IDS") ?? "454,448,551")
@@ -88,6 +87,46 @@ async function loadDeal(payload: Payload) {
   return (await bitrixCall<JsonRecord>("crm.deal.get", new URLSearchParams({ ID: String(fields.ID) }))).result!;
 }
 
+function slugRoletaAtual(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized.slice(0, 80) || "sem-roleta";
+}
+
+function buildBolsaoRoletaRow(roletaAtual: string) {
+  const trimmed = roletaAtual.trim() || rouletteTag;
+  const slug = slugRoletaAtual(trimmed);
+  return {
+    nome: trimmed,
+    bitrix_funil_id: `${categoryId}:${stageId}:${slug}`,
+    bitrix_category_id: categoryId,
+    bitrix_roleta_valor: trimmed,
+    descricao: `Leads do bolsão (${stageId}) com Roleta Atual: ${trimmed}`,
+    ativa: true,
+  };
+}
+
+async function upsertBolsaoRoleta(roletaAtual: string) {
+  const row = buildBolsaoRoletaRow(roletaAtual);
+  const { data, error } = await supabase.from("roletas").upsert(row, { onConflict: "bitrix_funil_id" }).select("id").single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+async function upsertBolsaoRoletasBatch(values: string[]) {
+  const unique = [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  const map = new Map<string, string>();
+  for (const value of unique) {
+    map.set(value, await upsertBolsaoRoleta(value));
+  }
+  return map;
+}
+
 async function markEventProcessed(eventId: string, reason?: string) {
   const { error } = await supabase.from("webhook_eventos").update({
     processado: true, processado_em: new Date().toISOString(), erro_processamento: reason ?? null,
@@ -103,17 +142,8 @@ function opportunityStatus(deal: JsonRecord, existing?: { corretor_id: string | 
   return existing?.corretor_id ? "em_trabalho" : "perdida";
 }
 
-async function upsertRoulette() {
-  const { data, error } = await supabase.from("roletas").upsert({
-    nome: poolName,
-    bitrix_funil_id: `${categoryId}:${stageId}:${rouletteTag.toLocaleLowerCase()}`,
-    bitrix_category_id: categoryId,
-    bitrix_roleta_valor: rouletteTag,
-    descricao: `Negócios em ${stageId} cuja Roleta Atual contém ${rouletteTag}`,
-    ativa: true,
-  }, { onConflict: "bitrix_funil_id" }).select("id").single();
-  if (error) throw error;
-  return data.id as string;
+async function upsertRoulette(roletaAtual: string) {
+  return upsertBolsaoRoleta(roletaAtual);
 }
 
 async function processDeal(deal: JsonRecord) {
@@ -136,7 +166,7 @@ async function processDeal(deal: JsonRecord) {
   }
 
   const value = rouletteValue(deal);
-  const rouletteId = await upsertRoulette();
+  const rouletteId = await upsertRoulette(value);
   const { error } = await supabase.from("oportunidades").upsert({
     bitrix_deal_id: dealId,
     roleta_id: rouletteId,
@@ -346,15 +376,7 @@ async function synchronizeEligibleDeals() {
 
   const eligible = deals.filter(isEligible);
   const total = reportedTotal ?? eligible.length;
-  const { data: roulette, error: rouletteError } = await supabase.from("roletas").upsert({
-    nome: poolName,
-    bitrix_funil_id: `${categoryId}:${stageId}:${rouletteTag.toLocaleLowerCase()}`,
-    bitrix_category_id: categoryId,
-    bitrix_roleta_valor: rouletteTag,
-    descricao: `Negócios em ${stageId} cuja Roleta Atual contém ${rouletteTag}`,
-    ativa: true,
-  }, { onConflict: "bitrix_funil_id" }).select("id").single();
-  if (rouletteError) throw rouletteError;
+  const roletaIdByValor = await upsertBolsaoRoletasBatch(eligible.map((deal) => rouletteValue(deal)));
 
   const dealIds = eligible.map((deal) => String(deal.ID));
   const existingRows = (await Promise.all(chunks(dealIds, 300).map(async (ids) => {
@@ -367,9 +389,11 @@ async function synchronizeEligibleDeals() {
   const opportunities = eligible.map((deal) => {
     const dealId = String(deal.ID);
     const value = rouletteValue(deal);
+    const roletaId = roletaIdByValor.get(value);
+    if (!roletaId) throw new Error(`Roleta não resolvida para valor: ${value}`);
     return {
       bitrix_deal_id: dealId,
-      roleta_id: roulette.id,
+      roleta_id: roletaId,
       titulo: String(deal.TITLE ?? `Negocio #${dealId}`),
       valor: Number(deal.OPPORTUNITY ?? 0),
       status: opportunityStatus(deal, existingOpportunities.get(dealId)),
@@ -385,7 +409,7 @@ async function synchronizeEligibleDeals() {
     if (error) throw error;
   }));
 
-  return { encontrados: total, importados: eligible.length, ignorados: deals.length - eligible.length, roletas: 1 };
+  return { encontrados: total, importados: eligible.length, ignorados: deals.length - eligible.length, roletas: roletaIdByValor.size };
 }
 
 function listComercialGeralMonthPeriods(year = Number(Deno.env.get("YEAR") ?? new Date().getFullYear())) {

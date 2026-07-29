@@ -299,7 +299,7 @@ export function AccessManagementPanel({
           <fieldset className="field access-choice-fieldset">
             <legend>Páginas liberadas</legend>
             <p className="field-hint access-pages-hint">
-              Minha carteira fica sempre liberada. Ao mudar a visão, as demais páginas voltam ao padrão: corretor só carteira; líder e diretora veem Roletas, Equipe, Auditorias e Visão geral; Configurações só admin.
+              Minha carteira fica sempre liberada. Ao mudar a visão, as demais páginas voltam ao padrão: corretor só carteira; líder e diretora veem Roletas, Equipe e Auditorias; Configurações só admin.
             </p>
             <div className="access-choice-group">
               {visiblePages.map((page) => {

@@ -5,7 +5,6 @@ export const appPageOptions = [
   { href: "/roletas", label: "Roletas" },
   { href: "/equipe", label: "Equipe" },
   { href: "/auditorias", label: "Auditorias" },
-  { href: "/dashboard", label: "Visão geral" },
   { href: "/configuracoes", label: "Configurações", adminOnly: true },
 ] as const;
 
@@ -22,9 +21,9 @@ export function defaultPaginasForPerfil(perfil: PerfilUsuario): PaginaAcesso[] {
       return ["/corretor"];
     case "lider":
     case "diretora":
-      return ["/corretor", "/roletas", "/equipe", "/auditorias", "/dashboard"];
+      return ["/corretor", "/roletas", "/equipe", "/auditorias"];
     case "admin":
-      return ["/corretor", "/roletas", "/equipe", "/auditorias", "/dashboard", "/configuracoes"];
+      return ["/corretor", "/roletas", "/equipe", "/auditorias", "/configuracoes"];
     default:
       return ["/corretor"];
   }

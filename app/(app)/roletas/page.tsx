@@ -10,9 +10,9 @@ export default async function RoulettesPage() {
     <>
       <PageHeader
         title="Roletas por corretor"
-        description="Defina quais fontes de oportunidade cada pessoa pode visualizar e captar. Bloqueios e auditoria aparecem antes da permissão."
+        description="Defina as fontes que cada corretor pode captar. Alterações ficam em rascunho até o salvamento, e bloqueios continuam visíveis antes da decisão."
       />
-      <RouletteConfig data={data} />
+      <RouletteConfig key={data.gerado_em} data={data} />
     </>
   );
 }

@@ -14,7 +14,8 @@ import { BrandMark } from "./brand-mark";
 import { PartnerBrandLockup } from "./partner-brand-lockup";
 
 function MobileGreeting({ user }: { user: AppUser }) {
-  const [greeting, setGreeting] = useState(() => greetingForName(user.nome));
+  const firstName = user.nome.trim().split(/\s+/)[0] ?? user.nome;
+  const [greeting, setGreeting] = useState<string | null>(null);
 
   useEffect(() => {
     setGreeting(greetingForName(user.nome));
@@ -24,7 +25,7 @@ function MobileGreeting({ user }: { user: AppUser }) {
 
   return (
     <div className="mobile-greeting">
-      <p className="mobile-greeting-title">{greeting}</p>
+      <p className="mobile-greeting-title">{greeting ?? `Olá, ${firstName}`}</p>
       <p className="mobile-greeting-meta">{formatUserRole(user.perfil, user.equipeNome)}</p>
     </div>
   );

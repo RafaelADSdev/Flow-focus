@@ -10,8 +10,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="pt-BR" className={plusJakartaSans.variable}>
-      <body className={plusJakartaSans.className}>
+    <html lang="pt-BR" className={plusJakartaSans.variable} suppressHydrationWarning>
+      <body className={plusJakartaSans.className} suppressHydrationWarning>
         <QueryProvider>{children}</QueryProvider>
       </body>
     </html>

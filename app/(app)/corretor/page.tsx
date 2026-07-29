@@ -13,7 +13,7 @@ export default async function BrokerPage() {
       <PageGreeting nome={carteira.nome} />
       <PageHeader
         title="Minha carteira"
-        description="Organize seu lote atual antes de captar novas oportunidades."
+        description="Capture oportunidades e acompanhe seu histórico recente."
       />
       <BrokerPanel data={carteira} bitrixPortalBase={getBitrixPortalBaseUrl()} />
     </>

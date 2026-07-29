@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hasSupabaseSecretKey } from "@/lib/supabase/env";
 
 const payloadSchema = z.object({
-  roletaId: z.string().uuid(),
+  roletaId: z.string().uuid().optional(),
 });
 
 type ActionResult =
@@ -25,7 +25,7 @@ function captureErrorMessage(code: string) {
     case "limite_diario_atingido":
       return "Você atingiu o limite diário de capturas.";
     case "roleta_sem_oportunidades":
-      return "Não há oportunidades disponíveis nesta roleta agora.";
+      return "Não há oportunidades disponíveis agora.";
     case "roleta_nao_autorizada":
       return "Você não tem permissão para captar nesta roleta.";
     case "perfil_sem_permissao":
@@ -103,10 +103,32 @@ async function rollbackCapture(
   }
 }
 
-export async function captarOportunidade(input: unknown): Promise<ActionResult> {
-  const parsed = payloadSchema.safeParse(input);
+async function findProximaOportunidade(
+  admin: ReturnType<typeof createAdminClient>,
+  roletaIds: string[],
+) {
+  if (!roletaIds.length) return null;
+
+  const { data: candidatas, error: candidatasError } = await admin
+    .from("oportunidades")
+    .select("id, titulo, bitrix_deal_id, corretor_id, captada_em, roleta_id")
+    .in("roleta_id", roletaIds)
+    .is("corretor_id", null)
+    .is("captada_em", null)
+    .order("criado_em", { ascending: true })
+    .limit(25);
+
+  if (candidatasError) {
+    throw new Error(candidatasError.message);
+  }
+
+  return (candidatas ?? []).find((item) => isOportunidadeDisponivel(item)) ?? null;
+}
+
+export async function captarOportunidade(input?: unknown): Promise<ActionResult> {
+  const parsed = payloadSchema.safeParse(input ?? {});
   if (!parsed.success) {
-    return { ok: false, error: "Roleta inválida." };
+    return { ok: false, error: "Não foi possível iniciar a captação." };
   }
 
   const supabase = await createClient();
@@ -130,12 +152,14 @@ export async function captarOportunidade(input: unknown): Promise<ActionResult> 
   const roletaId = parsed.data.roletaId;
   const today = new Date().toISOString().slice(0, 10);
 
-  const [{ data: corretor }, { data: bloqueio }, { data: autorizado }, { data: capturaAtual }] = await Promise.all([
+  const [{ data: corretor }, { data: bloqueio }, { data: autorizados }, { data: capturaAtual }] = await Promise.all([
     admin.from("usuarios").select("bitrix_user_id").eq("id", userId).single(),
     admin.from("bloqueios").select("id").eq("corretor_id", userId).is("liberado_em", null).maybeSingle(),
-    admin.from("roletas_corretor").select("roleta_id").eq("corretor_id", userId).eq("roleta_id", roletaId).maybeSingle(),
+    admin.from("roletas_corretor").select("roleta_id").eq("corretor_id", userId),
     admin.from("capturas_diarias").select("quantidade_captada, limite_do_dia").eq("corretor_id", userId).eq("data", today).maybeSingle(),
   ]);
+
+  const authorizedRoletaIds = (autorizados ?? []).map((item) => item.roleta_id);
 
   if (!corretor?.bitrix_user_id) {
     return { ok: false, error: captureErrorMessage("bitrix_nao_vinculado"), code: "bitrix_nao_vinculado" };
@@ -144,7 +168,11 @@ export async function captarOportunidade(input: unknown): Promise<ActionResult> 
   if (bloqueio) {
     return { ok: false, error: captureErrorMessage("corretor_bloqueado"), code: "corretor_bloqueado" };
   }
-  if (!autorizado) {
+
+  if (roletaId && !authorizedRoletaIds.includes(roletaId)) {
+    return { ok: false, error: captureErrorMessage("roleta_nao_autorizada"), code: "roleta_nao_autorizada" };
+  }
+  if (!roletaId && authorizedRoletaIds.length === 0) {
     return { ok: false, error: captureErrorMessage("roleta_nao_autorizada"), code: "roleta_nao_autorizada" };
   }
 
@@ -154,20 +182,15 @@ export async function captarOportunidade(input: unknown): Promise<ActionResult> 
     return { ok: false, error: captureErrorMessage("limite_diario_atingido"), code: "limite_diario_atingido" };
   }
 
-  const { data: candidatas, error: candidatasError } = await admin
-    .from("oportunidades")
-    .select("id, titulo, bitrix_deal_id, corretor_id, captada_em, roleta_id")
-    .eq("roleta_id", roletaId)
-    .is("corretor_id", null)
-    .is("captada_em", null)
-    .order("criado_em", { ascending: true })
-    .limit(1);
+  const roletaIdsParaBusca = roletaId ? [roletaId] : authorizedRoletaIds;
 
-  if (candidatasError) {
-    return { ok: false, error: candidatasError.message };
+  let oportunidade: Awaited<ReturnType<typeof findProximaOportunidade>>;
+  try {
+    oportunidade = await findProximaOportunidade(admin, roletaIdsParaBusca);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Não foi possível buscar oportunidades." };
   }
 
-  const oportunidade = (candidatas ?? []).find((item) => isOportunidadeDisponivel(item));
   if (!oportunidade) {
     return { ok: false, error: captureErrorMessage("roleta_sem_oportunidades"), code: "roleta_sem_oportunidades" };
   }

@@ -1,11 +1,18 @@
 import Link from "next/link";
 import type { Route } from "next";
-import { ArrowRight, Shield, SlidersHorizontal } from "lucide-react";
+import { ArrowRight, MapPinned, Shield, SlidersHorizontal } from "lucide-react";
 import { isAdmin } from "@/lib/auth/require-admin";
 
 export const metadata = { title: "Configurações" };
 
 const settingsLinks = [
+  {
+    href: "/configuracoes/localizacao",
+    title: "Localiza\u00e7\u00e3o do escrit\u00f3rio",
+    description: "Defina o ponto central e o raio que liberam o acesso ao Flow Focus.",
+    icon: MapPinned,
+    adminOnly: true,
+  },
   {
     href: "/configuracoes/acesso",
     title: "Gestão de acesso",

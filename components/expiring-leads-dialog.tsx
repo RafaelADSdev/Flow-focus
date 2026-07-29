@@ -116,8 +116,12 @@ export function ExpiringLeadsDialog({ broker, onClose }: { broker: { id: string;
 
   const items = query.data?.items ?? [];
   const hasDeadlines = items.some((item) => item.deadline);
-  const reducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const [reducedMotion, setReducedMotion] = useState(false);
   const tickMs = reducedMotion || !hasDeadlines ? 60_000 : 1_000;
+
+  useEffect(() => {
+    setReducedMotion(window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }, []);
 
   useEffect(() => {
     if (!broker || !hasDeadlines) return;

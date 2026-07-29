@@ -19,6 +19,12 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["broker_exemptions"]["Insert"]>;
         Relationships: [];
       };
+      geofence_configuracao: {
+        Row: { id: number; latitude: number; longitude: number; raio_metros: number; atualizado_por: string; atualizado_em: string };
+        Insert: { id?: number; latitude: number; longitude: number; raio_metros: number; atualizado_por: string; atualizado_em?: string };
+        Update: Partial<Database["public"]["Tables"]["geofence_configuracao"]["Insert"]>;
+        Relationships: [];
+      };
       equipes: {
         Row: { id: string; nome: string; lider_id: string | null; bitrix_department_id: string | null; bitrix_parent_department_id: string | null; bitrix_head_user_id: string | null; bitrix_diretoria_id: string | null; bitrix_superintendencia_id: string | null; criada_em: string };
         Insert: { id?: string; nome: string; lider_id?: string | null; bitrix_department_id?: string | null; bitrix_parent_department_id?: string | null; bitrix_head_user_id?: string | null; bitrix_diretoria_id?: string | null; bitrix_superintendencia_id?: string | null };
@@ -82,6 +88,7 @@ export type Database = {
       obter_carteira: { Args: Record<string, never>; Returns: Json };
       obter_config_roletas: { Args: Record<string, never>; Returns: Json };
       obter_painel_auditorias: { Args: Record<string, never>; Returns: Json };
+      registrar_geo_sessao: { Args: { p_user_id: string; p_expires_at: string }; Returns: undefined };
     };
     Enums: {
       perfil_usuario: PerfilUsuario;

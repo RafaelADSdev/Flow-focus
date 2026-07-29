@@ -30,7 +30,7 @@ export function PageLoading({
           <div className="skeleton skeleton-title" />
           <div className="skeleton skeleton-copy" />
           <div className="skeleton skeleton-panel broker-overview-skeleton" />
-          <div className="skeleton skeleton-grid roulette-grid-skeleton" />
+          <div className="skeleton skeleton-panel broker-capture-skeleton" />
         </div>
       ) : null}
       {variant === "roletas" ? (
@@ -38,7 +38,7 @@ export function PageLoading({
           <div className="skeleton skeleton-title" />
           <div className="skeleton skeleton-copy" />
           <div className="skeleton skeleton-toolbar" />
-          <div className="skeleton skeleton-panel permission-table-skeleton" />
+          <div className="skeleton skeleton-panel permission-matrix-shell-skeleton" />
         </div>
       ) : null}
       {variant === "table" ? (
