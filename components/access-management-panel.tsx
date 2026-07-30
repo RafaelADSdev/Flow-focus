@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Pencil, RefreshCw, Search, Trash2, UserPlus } from "lucide-react";
 import { atualizarAcesso, criarAcesso, desativarAcesso, reativarAcesso, sincronizarEquipesBitrix } from "@/lib/actions/acesso";
-import { appPageOptions, pageLabel, type PaginaAcesso } from "@/lib/auth/paginas-acesso";
+import { appPageOptions, pageLabel, type VisiblePaginaAcesso } from "@/lib/auth/paginas-acesso";
 import {
   defaultPaginasForPerfil,
   editarAcessoSchema,
@@ -79,7 +79,7 @@ export function AccessManagementPanel({
     });
   }
 
-  function togglePage(href: PaginaAcesso) {
+  function togglePage(href: VisiblePaginaAcesso) {
     if (href === "/corretor") return;
     setSaved(false);
     setError("");

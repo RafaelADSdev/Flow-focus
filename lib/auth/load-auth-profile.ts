@@ -4,7 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import type { PerfilUsuario } from "@/lib/database.types";
 import {
   defaultPaginasForPerfil,
-  normalizePaginasAcesso,
+  resolvePaginasAcesso,
   type PaginaAcesso,
 } from "@/lib/auth/paginas-acesso";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -76,7 +76,7 @@ export async function loadAuthProfile(authUser: User): Promise<LoadedAuthProfile
       perfil,
       equipeId: profile.equipe_id,
       equipeNome: profile.equipe_nome,
-      paginasAcesso: normalizePaginasAcesso(perfil, profile.paginas_acesso),
+      paginasAcesso: resolvePaginasAcesso(perfil, profile.paginas_acesso),
       ativo: profile.ativo,
     };
   }
@@ -87,7 +87,7 @@ export async function loadAuthProfile(authUser: User): Promise<LoadedAuthProfile
       perfil: perfilFromAuth,
       equipeId: null,
       equipeNome: null,
-      paginasAcesso: defaultPaginasForPerfil(perfilFromAuth),
+      paginasAcesso: resolvePaginasAcesso(perfilFromAuth, null),
       ativo: true,
     };
   }

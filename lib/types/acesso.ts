@@ -1,5 +1,5 @@
 import type { PerfilUsuario } from "@/lib/database.types";
-import type { PaginaAcesso } from "@/lib/auth/paginas-acesso";
+import type { VisiblePaginaAcesso } from "@/lib/auth/paginas-acesso";
 
 export type EquipeOption = {
   id: string;
@@ -14,7 +14,7 @@ export type AcessoListItem = {
   equipeId: string | null;
   equipeNome: string | null;
   bitrixUserId: string | null;
-  paginasAcesso: PaginaAcesso[];
+  paginasAcesso: VisiblePaginaAcesso[];
   ativo: boolean;
 };
 

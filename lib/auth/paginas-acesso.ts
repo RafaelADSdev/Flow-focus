@@ -1,4 +1,5 @@
 import type { PerfilUsuario } from "@/lib/database.types";
+import { canManageOperacao } from "@/lib/auth/perfil";
 
 export const appPageOptions = [
   { href: "/corretor", label: "Minha carteira" },
@@ -8,14 +9,19 @@ export const appPageOptions = [
   { href: "/configuracoes", label: "Configurações", adminOnly: true },
 ] as const;
 
-export type PaginaAcesso = (typeof appPageOptions)[number]["href"];
+/** Rotas concedidas fora do painel de acesso (migrations, perfil operacional). */
+export const hiddenPaginasAcesso = ["/comercial-geral", "/dashboard"] as const;
+
+export type VisiblePaginaAcesso = (typeof appPageOptions)[number]["href"];
+export type HiddenPaginaAcesso = (typeof hiddenPaginasAcesso)[number];
+export type PaginaAcesso = VisiblePaginaAcesso | HiddenPaginaAcesso;
 
 export const paginaAcessoValues = appPageOptions.map((page) => page.href) as [
-  PaginaAcesso,
-  ...PaginaAcesso[],
+  VisiblePaginaAcesso,
+  ...VisiblePaginaAcesso[],
 ];
 
-export function defaultPaginasForPerfil(perfil: PerfilUsuario): PaginaAcesso[] {
+export function defaultPaginasForPerfil(perfil: PerfilUsuario): VisiblePaginaAcesso[] {
   switch (perfil) {
     case "corretor":
       return ["/corretor"];
@@ -29,14 +35,27 @@ export function defaultPaginasForPerfil(perfil: PerfilUsuario): PaginaAcesso[] {
   }
 }
 
+function extractHiddenPaginas(paginas: readonly string[] | null | undefined): HiddenPaginaAcesso[] {
+  const allowed = new Set<string>(hiddenPaginasAcesso);
+  return [...new Set(
+    (paginas ?? [])
+      .map((page) => page.trim())
+      .filter((page): page is HiddenPaginaAcesso => allowed.has(page)),
+  )];
+}
+
+function hiddenPaginasForPerfil(perfil: PerfilUsuario): HiddenPaginaAcesso[] {
+  return canManageOperacao(perfil) ? ["/comercial-geral"] : [];
+}
+
 export function normalizePaginasAcesso(
   perfil: PerfilUsuario,
   paginas: readonly string[] | null | undefined,
-): PaginaAcesso[] {
+): VisiblePaginaAcesso[] {
   const allowed = new Set<string>(paginaAcessoValues);
   const cleaned = (paginas ?? [])
     .map((page) => page.trim())
-    .filter((page): page is PaginaAcesso => allowed.has(page));
+    .filter((page): page is VisiblePaginaAcesso => allowed.has(page));
 
   const allowedForProfile = perfil === "admin"
     ? cleaned
@@ -47,7 +66,16 @@ export function normalizePaginasAcesso(
   }
 
   // Minha carteira é a entrada de captação — sempre liberada para qualquer perfil.
-  return [...new Set(["/corretor" as PaginaAcesso, ...allowedForProfile])];
+  return [...new Set(["/corretor" as VisiblePaginaAcesso, ...allowedForProfile])];
+}
+
+export function resolvePaginasAcesso(
+  perfil: PerfilUsuario,
+  paginas: readonly string[] | null | undefined,
+): PaginaAcesso[] {
+  const visible = normalizePaginasAcesso(perfil, paginas);
+  const hidden = [...new Set([...extractHiddenPaginas(paginas), ...hiddenPaginasForPerfil(perfil)])];
+  return [...visible, ...hidden];
 }
 
 export function canAccessPath(paginas: readonly string[], pathname: string): boolean {
@@ -55,12 +83,18 @@ export function canAccessPath(paginas: readonly string[], pathname: string): boo
     return paginas.includes("/configuracoes");
   }
 
+  for (const href of hiddenPaginasAcesso) {
+    if (paginas.includes(href) && (pathname === href || pathname.startsWith(`${href}/`))) {
+      return true;
+    }
+  }
+
   return appPageOptions.some(
     (page) => paginas.includes(page.href) && (pathname === page.href || pathname.startsWith(`${page.href}/`)),
   );
 }
 
-export function firstAllowedPath(paginas: readonly string[]): PaginaAcesso {
+export function firstAllowedPath(paginas: readonly string[]): VisiblePaginaAcesso {
   for (const page of appPageOptions) {
     if (paginas.includes(page.href)) return page.href;
   }

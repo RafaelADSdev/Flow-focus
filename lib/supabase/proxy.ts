@@ -4,6 +4,7 @@ import {
   canAccessPath,
   firstAllowedPath,
   normalizePaginasAcesso,
+  resolvePaginasAcesso,
 } from "@/lib/auth/paginas-acesso";
 import { mapPerfil } from "@/lib/auth/perfil";
 import type { Database } from "@/lib/database.types";
@@ -98,7 +99,7 @@ export async function updateSession(request: NextRequest) {
     }
 
     const perfil = profile?.perfil ?? perfilFromAuth;
-    const paginas = normalizePaginasAcesso(perfil, profile?.paginas_acesso);
+    const paginas = resolvePaginasAcesso(perfil, profile?.paginas_acesso);
     homePath = firstAllowedPath(paginas);
 
     if (isLogin) {
