@@ -6,6 +6,7 @@ export const appPageOptions = [
   { href: "/roletas", label: "Roletas" },
   { href: "/equipe", label: "Equipe" },
   { href: "/auditorias", label: "Auditorias" },
+  { href: "/resultados", label: "Resultados" },
   { href: "/configuracoes", label: "Configurações", adminOnly: true },
 ] as const;
 
@@ -24,12 +25,12 @@ export const paginaAcessoValues = appPageOptions.map((page) => page.href) as [
 export function defaultPaginasForPerfil(perfil: PerfilUsuario): VisiblePaginaAcesso[] {
   switch (perfil) {
     case "corretor":
-      return ["/corretor"];
+      return ["/corretor", "/resultados"];
     case "lider":
     case "diretora":
-      return ["/corretor", "/roletas", "/equipe", "/auditorias"];
+      return ["/corretor", "/roletas", "/equipe", "/auditorias", "/resultados"];
     case "admin":
-      return ["/corretor", "/roletas", "/equipe", "/auditorias", "/configuracoes"];
+      return ["/corretor", "/roletas", "/equipe", "/auditorias", "/resultados", "/configuracoes"];
     default:
       return ["/corretor"];
   }

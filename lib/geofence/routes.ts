@@ -1,5 +1,6 @@
 const PROTECTED_PAGE_PREFIXES = [
   "/auditorias",
+  "/resultados",
   "/comercial-geral",
   "/configuracoes",
   "/corretor",

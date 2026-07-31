@@ -129,6 +129,8 @@ npx supabase functions deploy bitrix-webhook --no-verify-jwt
 
 `BITRIX24_FILTER_*` define a origem do bolsão (Comercial Geral · Encaminhamento de leads); `BITRIX24_CAPTURE_*` define o destino ao captar (Comercial · GERAL · Tentativa de Contato). Todas essas variaveis tambem precisam existir em `.env.local` para os scripts locais (veja `.env.example`).
 
+Na aba Resultados, etapas cujo nome contenha `Quarentena`, `Bolsão` ou `Retorno` são classificadas automaticamente. Quando o portal usa nomes diferentes, configure `BITRIX24_QUARANTINE_STAGE_IDS` e `BITRIX24_RETURN_TO_POOL_STAGE_IDS` com IDs de etapa separados por vírgula.
+
 O endpoint nao usa JWT porque o Bitrix24 e um sistema externo. Em vez disso, exige `x-flow-focus-secret`; mantenha o valor fora da URL sempre que o Bitrix permitir header customizado.
 
 Teste local com o mock:

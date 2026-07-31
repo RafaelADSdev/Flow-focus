@@ -22,6 +22,7 @@ export type BrokerPipelineRow = {
   user: BitrixTeamUser;
   total: number;
   criticos: number;
+  quarentena: number;
   perdidos: number;
   ganhos: number;
   totalRelevante: number;
@@ -48,6 +49,8 @@ export type TeamPipeline = {
   };
   updatedAt: string;
 };
+
+export type ExpiringLeadsMode = "critical" | "quarantine";
 
 export type ExpiringLead = {
   dealId: string;

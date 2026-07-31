@@ -21,6 +21,12 @@ export async function cached<T>(key: string, ttlMs: number, load: () => Promise<
   return request;
 }
 
+export function invalidateCachePrefix(prefix: string) {
+  for (const key of values.keys()) {
+    if (key.startsWith(prefix)) values.delete(key);
+  }
+}
+
 export async function mapLimit<T, R>(
   items: readonly T[],
   limit: number,

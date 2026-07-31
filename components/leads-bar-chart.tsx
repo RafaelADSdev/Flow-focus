@@ -16,9 +16,10 @@ const BAR_COLORS = ["#3C1A4F", "#1C1C1C", "#8B5E3C", "#A98DB2", "#62584D", "#2D1
 interface LeadsBarChartProps {
   data: Array<{ nome: string; total: number }>;
   ariaLabel: string;
+  valueLabel?: string;
 }
 
-export function LeadsBarChart({ data, ariaLabel }: LeadsBarChartProps) {
+export function LeadsBarChart({ data, ariaLabel, valueLabel = "Leads" }: LeadsBarChartProps) {
   if (!data.length) {
     return <p className="empty-copy">Nenhum lead no período para agrupar.</p>;
   }
@@ -49,9 +50,9 @@ export function LeadsBarChart({ data, ariaLabel }: LeadsBarChartProps) {
               color: "var(--ink)",
               fontSize: 13,
             }}
-            formatter={(value) => [Number(value ?? 0).toLocaleString("pt-BR"), "Leads"]}
+            formatter={(value) => [Number(value ?? 0).toLocaleString("pt-BR"), valueLabel]}
           />
-          <Bar dataKey="total" name="Leads" radius={[0, 8, 8, 0]} barSize={18}>
+          <Bar dataKey="total" name={valueLabel} radius={[0, 8, 8, 0]} barSize={18}>
             {data.map((entry, index) => (
               <Cell key={entry.nome} fill={BAR_COLORS[index % BAR_COLORS.length]} />
             ))}

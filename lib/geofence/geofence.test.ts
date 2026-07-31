@@ -54,6 +54,7 @@ describe("geo-sessao assinada", () => {
 describe("escopo de rotas do geofence", () => {
   it("protege paginas operacionais e o namespace de dados", () => {
     expect(isGeofenceProtectedPage("/corretor")).toBe(true);
+    expect(isGeofenceProtectedPage("/resultados")).toBe(true);
     expect(isGeofenceProtectedPage("/configuracoes/acesso")).toBe(true);
     expect(isGeofenceProtectedPage("/configuracoes")).toBe(false);
     expect(isGeofenceProtectedPage("/configuracoes/localizacao")).toBe(false);

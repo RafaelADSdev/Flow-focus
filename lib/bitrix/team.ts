@@ -1,11 +1,12 @@
 import "server-only";
 
-import { cached, mapLimit } from "@/lib/bitrix/cache";
+import { cached, invalidateCachePrefix, mapLimit } from "@/lib/bitrix/cache";
 import { bitrixCallPage } from "@/lib/bitrix/client";
 import type {
   BitrixTeamUser,
   BrokerPipelineRow,
   ExpiringLead,
+  ExpiringLeadsMode,
   ExpiringLeadsResult,
   TeamPipeline,
 } from "@/lib/types/equipe";
@@ -14,7 +15,10 @@ const PIPELINE_NAME = "Comercial - GERAL";
 import {
   assessCriticalDeal,
   DAY_MS,
+  criticalDeadlineSource,
+  isDealQuarantineStatus,
   isDueRdStationLead,
+  prazoQuarentenaDate,
   ROULETTE_FIELD,
 } from "@/lib/bitrix/team-critical";
 
@@ -73,12 +77,6 @@ function emptyPipeline(scopeLabel: string, error: string): TeamPipeline {
   };
 }
 
-
-function truthyFlag(value: unknown) {
-  if (value == null) return false;
-  const normalized = String(value).trim().toLowerCase();
-  return Boolean(normalized && !["n", "0", "false", "no"].includes(normalized));
-}
 
 function isLostStage(stageId: string) {
   return /LOSE|PERDID|PRAZO/i.test(stageId);
@@ -249,14 +247,17 @@ async function getPipelineStages(categoryId: string) {
   });
 }
 
+const DEALS_CACHE_TTL_MS = 60_000;
+
 async function listDeals(
   userId: string,
   categoryId: string,
-  options: { closed: boolean; month?: string | null },
+  options: { closed: boolean; month?: string | null; fresh?: boolean },
 ) {
   const range = monthRange(options.month);
   const cacheKey = `team:deals:${categoryId}:${userId}:${options.closed ? "closed" : "open"}:${options.month ?? "all"}`;
-  return cached(cacheKey, 5 * 60_000, async () => {
+  if (options.fresh) invalidateCachePrefix(cacheKey);
+  return cached(cacheKey, DEALS_CACHE_TTL_MS, async () => {
     const output: BitrixDeal[] = [];
     let start = 0;
     for (let page = 0; page < 40; page += 1) {
@@ -309,19 +310,11 @@ function scopeForUser(user: RawBitrixUser, allDepartments: readonly Department[]
   return { targets: restricted, scopeLabel };
 }
 
-function criticalDeadline(deal: BitrixDeal) {
-  const date = deal.UF_CRM_1726060110 ? new Date(deal.UF_CRM_1726060110) : null;
-  return {
-    date: date && !Number.isNaN(date.getTime()) ? date : null,
-    isQuarantine: truthyFlag(deal.UF_CRM_1717073472),
-    fromCreation: false,
-  };
-}
-
 async function buildTeamPipeline(
   departments: Array<{ id: number; name: string }>,
   scopeLabel: string,
   month: string | null,
+  fresh = false,
 ): Promise<TeamPipeline> {
   const pipeline = await resolvePipeline();
   const [members, stages] = await Promise.all([
@@ -333,8 +326,8 @@ async function buildTeamPipeline(
   const stageNames = new Map(stages.map((stage) => [stage.id, stage.name]));
   const results = await mapLimit(brokers, 6, async (user) => {
     const [openDeals, closedDeals] = await Promise.all([
-      listDeals(user.ID, pipeline.id, { closed: false, month }).catch(() => []),
-      listDeals(user.ID, pipeline.id, { closed: true, month }).catch(() => []),
+      listDeals(user.ID, pipeline.id, { closed: false, month, fresh }).catch(() => []),
+      listDeals(user.ID, pipeline.id, { closed: true, month, fresh }).catch(() => []),
     ]);
     return { user, openDeals, closedDeals };
   });
@@ -356,8 +349,10 @@ async function buildTeamPipeline(
       else perdidos += 1;
     }
     let criticos = 0;
+    let quarentena = 0;
     for (const deal of openDeals) {
       counts[deal.STAGE_ID] = (counts[deal.STAGE_ID] ?? 0) + 1;
+      if (isDealQuarantineStatus(deal.UF_CRM_1717073472)) quarentena += 1;
       const stageName = stageNames.get(deal.STAGE_ID) ?? "";
       const assessment = assessCriticalDeal(deal, stageName, {
         lostStage: isLostStage(deal.STAGE_ID) || lostStages.has(deal.STAGE_ID),
@@ -379,6 +374,7 @@ async function buildTeamPipeline(
       user,
       total: openDeals.length,
       criticos,
+      quarentena,
       perdidos,
       ganhos,
       totalRelevante: openDeals.length,
@@ -413,13 +409,13 @@ async function buildTeamPipeline(
   };
 }
 
-export async function getTeamPipelineForEmail(email: string, month: string | null): Promise<TeamPipeline> {
+export async function getTeamPipelineForEmail(email: string, month: string | null, fresh = false): Promise<TeamPipeline> {
   if (!email) return emptyPipeline("Equipe", "Sua sessão não possui um e-mail válido.");
   try {
     const [caller, departments] = await Promise.all([findBitrixUserByEmail(email), listAllDepartments()]);
     if (!caller) return emptyPipeline("Equipe", "Seu e-mail não foi encontrado entre os usuários do Bitrix24.");
     const scope = scopeForUser(caller, departments);
-    return await buildTeamPipeline(scope.targets, scope.scopeLabel, monthRange(month) ? month : null);
+    return await buildTeamPipeline(scope.targets, scope.scopeLabel, monthRange(month) ? month : null, fresh);
   } catch (error) {
     return emptyPipeline("Equipe", error instanceof Error ? error.message : "Não foi possível consultar o Bitrix24.");
   }
@@ -435,7 +431,12 @@ async function getSourceNameMap() {
   });
 }
 
-export async function getExpiringLeadsForEmail(email: string, brokerId: string): Promise<ExpiringLeadsResult> {
+export async function getExpiringLeadsForEmail(
+  email: string,
+  brokerId: string,
+  mode: ExpiringLeadsMode = "critical",
+  fresh = false,
+): Promise<ExpiringLeadsResult> {
   const failed = (error: string): ExpiringLeadsResult => ({
     ok: false,
     error,
@@ -460,7 +461,7 @@ export async function getExpiringLeadsForEmail(email: string, brokerId: string):
 
     const pipeline = await resolvePipeline();
     const [deals, stages, sourceNames] = await Promise.all([
-      listDeals(brokerId, pipeline.id, { closed: false }),
+      listDeals(brokerId, pipeline.id, { closed: false, fresh }),
       getPipelineStages(pipeline.id),
       getSourceNameMap().catch(() => ({} as Record<string, string>)),
     ]);
@@ -471,25 +472,41 @@ export async function getExpiringLeadsForEmail(email: string, brokerId: string):
 
     for (const deal of deals) {
       if (isWonStage(deal.STAGE_ID) || isLostStage(deal.STAGE_ID) || lostStages.has(deal.STAGE_ID)) continue;
-      const stageName = stageNames.get(deal.STAGE_ID) ?? "";
-      const assessment = assessCriticalDeal(deal, stageName, { lostStage: false, now });
-      if (!assessment.critical) continue;
 
-      const deadlineData = criticalDeadline(deal);
+      const stageName = stageNames.get(deal.STAGE_ID) ?? "";
+      const inQuarantine = isDealQuarantineStatus(deal.UF_CRM_1717073472);
+      if (mode === "quarantine" && !inQuarantine) continue;
+      if (mode === "critical" && inQuarantine) continue;
+
+      const assessment = assessCriticalDeal(deal, stageName, { lostStage: false, now });
+      if (mode === "critical" && !assessment.critical) continue;
+
       const sourceName = deal.SOURCE_ID ? sourceNames[deal.SOURCE_ID] ?? null : null;
       const expiringSoon = assessment.expiringSoon;
       const stagnant = assessment.stagnant;
+      const quarantineDeadline = inQuarantine ? prazoQuarentenaDate(deal) : null;
+      const displayDeadline = mode === "quarantine"
+        ? quarantineDeadline
+        : expiringSoon
+          ? assessment.deadline
+          : null;
+      const deadlineSource = displayDeadline
+        ? mode === "quarantine"
+          ? "quarentena"
+          : criticalDeadlineSource(deal, stageName)
+        : null;
+      const msRemaining = displayDeadline ? displayDeadline.getTime() - now : 0;
       items.push({
         dealId: deal.ID,
         title: deal.TITLE || `Negócio ${deal.ID}`,
         stageName: stageName || null,
-        deadline: expiringSoon && assessment.deadline ? assessment.deadline.toISOString() : null,
-        deadlineSource: expiringSoon ? "padrao" : null,
-        isQuarantine: deadlineData.isQuarantine,
-        msRemaining: expiringSoon ? assessment.msRemaining : 0,
+        deadline: displayDeadline ? displayDeadline.toISOString() : null,
+        deadlineSource,
+        isQuarantine: inQuarantine,
+        msRemaining,
         daysStagnated: assessment.daysStagnated,
         reason: expiringSoon && stagnant ? "prazo-e-sem-movimentacao" : expiringSoon ? "prazo" : "sem-movimentacao",
-        justification: deadlineData.isQuarantine ? String(deal.UF_CRM_1746557234244 ?? "").trim() || null : null,
+        justification: inQuarantine ? String(deal.UF_CRM_1746557234244 ?? "").trim() || null : null,
         sourceName,
         isDueRdStation: isDueRdStationLead({
           title: deal.TITLE,
@@ -507,6 +524,6 @@ export async function getExpiringLeadsForEmail(email: string, brokerId: string):
     });
     return { ok: true, brokerId, items, updatedAt: new Date().toISOString() };
   } catch (error) {
-    return failed(error instanceof Error ? error.message : "Não foi possível consultar os leads críticos.");
+    return failed(error instanceof Error ? error.message : `Não foi possível consultar os leads ${mode === "quarantine" ? "em quarentena" : "críticos"}.`);
   }
 }

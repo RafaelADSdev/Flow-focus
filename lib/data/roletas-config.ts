@@ -8,24 +8,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasSupabaseEnv, hasSupabaseSecretKey } from "@/lib/supabase/env";
 import { isMissingRpc } from "@/lib/supabase/rpc";
-import { getBolsaoSyncDefaults } from "@/lib/bitrix/bolsao-roleta";
+import { isRoletaCaptura, ROLETA_COMERCIAL_GERAL_FOCUS } from "@/lib/data/roleta-captura";
 import type { RoletasConfigData } from "@/lib/types/roletas";
 
 export type { RoletasConfigCorretor, RoletasConfigData, RoletasConfigRoleta } from "@/lib/types/roletas";
-
-const ROLETA_COMERCIAL_GERAL_FOCUS = "Comercial Geral · Focus";
-const BOLSAO_CATEGORY_ID = getBolsaoSyncDefaults().categoryId;
-
-function isRoletaCaptura(roleta: {
-  nome: string;
-  bitrix_funil_id?: string | null;
-  bitrix_category_id?: string | null;
-}) {
-  if (roleta.nome === ROLETA_COMERCIAL_GERAL_FOCUS) return false;
-  if (roleta.bitrix_funil_id?.endsWith(":dashboard")) return false;
-  if (!roleta.bitrix_category_id || roleta.bitrix_category_id !== BOLSAO_CATEGORY_ID) return false;
-  return true;
-}
 
 function withoutOperationalRoletas(data: RoletasConfigData): RoletasConfigData {
   const excluded = new Set(
@@ -239,12 +225,17 @@ async function loadLatestPermissionReceipt(
 async function loadRoletasConfigFromTables(viewer: ViewerContext): Promise<RoletasConfigData> {
   const admin = createAdminClient();
 
-  const [roletasResult, usuarios, atribuicoesResult, bloqueiosResult, auditoriasResult] = await Promise.all([
+  const [roletasResult, usuarios, atribuicoesResult, bloqueiosResult, capacidadeResult] = await Promise.all([
     admin.from("roletas").select("id, nome, bitrix_funil_id, bitrix_category_id").eq("ativa", true).order("nome"),
     loadUsuariosAtivos(admin),
     admin.from("roletas_corretor").select("corretor_id, roleta_id"),
     admin.from("bloqueios").select("corretor_id").is("liberado_em", null),
-    admin.from("auditorias").select("corretor_id").eq("status", "pendente"),
+    admin
+      .from("oportunidades")
+      .select("corretor_id")
+      .not("corretor_id", "is", null)
+      .not("captada_em", "is", null)
+      .is("auditoria_aprovada_em", null),
   ]);
 
   if (roletasResult.error) {
@@ -268,7 +259,14 @@ async function loadRoletasConfigFromTables(viewer: ViewerContext): Promise<Rolet
   }
 
   const bloqueados = new Set((bloqueiosResult.data ?? []).map((item) => item.corretor_id));
-  const emAuditoria = new Set((auditoriasResult.data ?? []).map((item) => item.corretor_id));
+  const ativosPorCorretor = new Map<string, number>();
+  for (const item of capacidadeResult.data ?? []) {
+    if (!item.corretor_id) continue;
+    ativosPorCorretor.set(item.corretor_id, (ativosPorCorretor.get(item.corretor_id) ?? 0) + 1);
+  }
+  const emAuditoria = new Set(
+    [...ativosPorCorretor.entries()].filter(([, total]) => total >= 6).map(([corretorId]) => corretorId),
+  );
 
   const corretores = usuarios
     .map((usuario) => ({

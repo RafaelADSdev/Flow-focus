@@ -3,7 +3,7 @@
 import { loadAuthProfile } from "@/lib/auth/load-auth-profile";
 import { getExpiringLeadsForEmail, getTeamPipelineForEmail } from "@/lib/bitrix/team";
 import { createClient } from "@/lib/supabase/server";
-import type { BrokerExemption, ExpiringLeadsResult, TeamPipeline } from "@/lib/types/equipe";
+import type { BrokerExemption, ExpiringLeadsMode, ExpiringLeadsResult, TeamPipeline } from "@/lib/types/equipe";
 
 async function getAuthorizedUser() {
   const supabase = await createClient();
@@ -17,7 +17,7 @@ async function getAuthorizedUser() {
   return { supabase, user, error: null } as const;
 }
 
-export async function loadTeamPipeline(month: string | null): Promise<TeamPipeline> {
+export async function loadTeamPipeline(month: string | null, fresh = false): Promise<TeamPipeline> {
   const auth = await getAuthorizedUser();
   if (!auth.user) {
     return {
@@ -27,15 +27,19 @@ export async function loadTeamPipeline(month: string | null): Promise<TeamPipeli
       updatedAt: new Date().toISOString(),
     };
   }
-  return getTeamPipelineForEmail(auth.user.email ?? "", month);
+  return getTeamPipelineForEmail(auth.user.email ?? "", month, fresh);
 }
 
-export async function loadExpiringLeads(brokerId: string): Promise<ExpiringLeadsResult> {
+export async function loadExpiringLeads(
+  brokerId: string,
+  mode: ExpiringLeadsMode = "critical",
+  fresh = false,
+): Promise<ExpiringLeadsResult> {
   const auth = await getAuthorizedUser();
   if (!auth.user) {
     return { ok: false, error: auth.error, brokerId, items: [], updatedAt: new Date().toISOString() };
   }
-  return getExpiringLeadsForEmail(auth.user.email ?? "", brokerId);
+  return getExpiringLeadsForEmail(auth.user.email ?? "", brokerId, mode, fresh);
 }
 
 export async function loadBrokerExemptions(): Promise<{ ok: boolean; items: BrokerExemption[] }> {

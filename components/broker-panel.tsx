@@ -63,15 +63,15 @@ function captureGateLabel(estadoCiclo: CarteiraData["estado_ciclo"], capturados:
   }
   if (estadoCiclo === "auditoria_pendente") {
     return {
-      label: "Auditoria pendente",
-      title: "Lote em auditoria. Trabalhe as capturas no Bitrix24 até a liberação.",
+      label: "6 leads ativos",
+      title: "Capacidade completa. A liderança libera uma vaga a cada lead aprovado.",
       icon: <Clock3 size={16} aria-hidden />,
     };
   }
   if (capturados >= limite) {
     return {
       label: "Limite atingido",
-      title: "Limite diário atingido. Trabalhe a carteira e aguarde a auditoria.",
+      title: "Capacidade de 6 leads ativos atingida. Aguarde a auditoria.",
       icon: <LockKeyhole size={16} aria-hidden />,
     };
   }
@@ -107,8 +107,8 @@ export function BrokerPanel({
   const temDisponiveis = totalDisponiveis > 0;
   const restante = Math.max(0, limite - capturados);
   const cicloLiberado = estadoCiclo === "captacao_liberada";
-  const limiteDiarioAtingido = capturados >= limite;
-  const captacaoTravada = !cicloLiberado || limiteDiarioAtingido;
+  const limiteAtivoAtingido = capturados >= limite;
+  const captacaoTravada = !cicloLiberado || limiteAtivoAtingido;
   const gate = captureGateLabel(estadoCiclo, capturados, limite);
   const progress = limite > 0 ? Math.min(100, (capturados / limite) * 100) : 0;
   const CycleIcon = cycleMeta[estadoCiclo].icon;
@@ -116,12 +116,13 @@ export function BrokerPanel({
     estadoCiclo === "bloqueado"
       ? "Captação bloqueada. Aguarde a liberação da liderança."
       : estadoCiclo === "auditoria_pendente"
-        ? "Lote em auditoria. Trabalhe as capturas no Bitrix24 até a liberação."
+        ? "Capacidade completa. A liderança libera uma vaga a cada lead aprovado."
         : restante > 0
           ? `Você ainda pode captar ${restante} oportunidade${restante === 1 ? "" : "s"}.`
-          : "Lote completo. Trabalhe a carteira e aguarde a auditoria.";
+          : "Capacidade completa. Cada lead aprovado pela liderança libera uma nova vaga.";
 
   const isPageBusy = syncing || capturing || isRefreshing;
+  const displayedSyncedAt = Date.parse(lastSyncedAt) >= Date.parse(data.gerado_em) ? lastSyncedAt : data.gerado_em;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => setProgressReady(true));
@@ -189,10 +190,6 @@ export function BrokerPanel({
       setSyncing(false);
     }
   }, [refreshData]);
-
-  useEffect(() => {
-    setLastSyncedAt(data.gerado_em);
-  }, [data.gerado_em]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -271,9 +268,9 @@ export function BrokerPanel({
         </div>
       ) : null}
 
-      <section className="broker-overview" aria-label="Limite diário e estado do ciclo">
+      <section className="broker-overview" aria-label="Capacidade de leads ativos e estado do ciclo">
         <div className="limit-copy">
-          <span className="limit-label">Seu limite de hoje</span>
+          <span className="limit-label">Leads ativos</span>
           <div>
             <strong key={capturados} className={`limit-count${limitPulse ? " is-ticking" : ""}`}>
               {capturados}
@@ -298,7 +295,7 @@ export function BrokerPanel({
           </div>
           <div className="progress-scale">
             <span>Início</span>
-            <span>Limite diário</span>
+            <span>Teto de {limite}</span>
           </div>
         </div>
         <div
@@ -370,7 +367,7 @@ export function BrokerPanel({
               {syncing ? "Sincronizando…" : "Sincronizar leads"}
             </button>
             <span className="sync-label">
-              {syncing ? "Atualizando fila do Bitrix24" : `Última sync ${formatDate(lastSyncedAt)}`}
+              {syncing ? "Atualizando fila do Bitrix24" : `Última sync ${formatDate(displayedSyncedAt)}`}
             </span>
           </div>
         </div>
@@ -381,7 +378,7 @@ export function BrokerPanel({
               type="button"
               className={`button ${
                 cicloLiberado &&
-                !limiteDiarioAtingido &&
+                !limiteAtivoAtingido &&
                 temDisponiveis &&
                 !capturing &&
                 !syncing &&

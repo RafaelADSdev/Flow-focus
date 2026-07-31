@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, AlertTriangle, CheckCircle2, MessageSquareOff, PauseCircle, Timer, X, Zap } from "lucide-react";
 import { loadExpiringLeads } from "@/lib/actions/equipe";
-import type { ExpiringLead } from "@/lib/types/equipe";
+import type { ExpiringLead, ExpiringLeadsMode } from "@/lib/types/equipe";
 
 const FOCUSABLE = "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])";
 
@@ -19,12 +19,24 @@ function formatCountdown(ms: number) {
   return `${minutes}m ${seconds}s`;
 }
 
-function LeadRow({ lead, tick, tickMs }: { lead: ExpiringLead; tick: number; tickMs: number }) {
+function deadlineLabel(lead: ExpiringLead) {
+  if (lead.deadlineSource === "quarentena") return "Prazo da quarentena";
+  return "Prazo";
+}
+
+function LeadRow({ lead, mode, tick, tickMs }: { lead: ExpiringLead; mode: ExpiringLeadsMode; tick: number; tickMs: number }) {
   const remaining = lead.msRemaining - tick * tickMs;
   const expired = Boolean(lead.deadline && remaining < 0);
+  const quarantine = mode === "quarantine";
   return (
     <article className={`export-lead-row${expired ? " is-expired" : lead.deadline ? " is-due" : " is-stagnant"}`}>
-      <div><strong>{lead.title}</strong><p>{lead.stageName}{lead.deadline ? ` · Prazo: ${new Date(lead.deadline).toLocaleString("pt-BR")}` : ""}</p></div>
+      <div>
+        <strong>{lead.title}</strong>
+        <p>
+          {lead.stageName}
+          {lead.deadline ? ` · ${deadlineLabel(lead)}: ${new Date(lead.deadline).toLocaleString("pt-BR")}` : ""}
+        </p>
+      </div>
       <div className="export-lead-state" aria-live="off">
         {lead.deadline ? (
           <strong>
@@ -32,12 +44,15 @@ function LeadRow({ lead, tick, tickMs }: { lead: ExpiringLead; tick: number; tic
             {expired ? "Expirado há" : "Faltam"} {formatCountdown(remaining)}
           </strong>
         ) : (
-          <strong><MessageSquareOff size={14} aria-hidden="true" />{lead.daysStagnated}d sem movimentação</strong>
+          <strong>
+            <MessageSquareOff size={14} aria-hidden="true" />
+            {quarantine ? "Sem prazo da quarentena" : `${lead.daysStagnated}d sem movimentação`}
+          </strong>
         )}
         <div>
           {lead.isQuarantine ? <span><PauseCircle size={11} aria-hidden="true" />Quarentena</span> : null}
           {lead.isRecentlyCreated ? <span>Recém-criado · 7d</span> : null}
-          {lead.reason !== "prazo" ? <span>{lead.daysStagnated}d sem mov.</span> : null}
+          {!quarantine && lead.reason !== "prazo" ? <span>{lead.daysStagnated}d sem mov.</span> : null}
           {lead.isDueRdStation ? <span><Zap size={11} aria-hidden="true" />DUE · RD Station</span> : null}
         </div>
       </div>
@@ -46,15 +61,24 @@ function LeadRow({ lead, tick, tickMs }: { lead: ExpiringLead; tick: number; tic
   );
 }
 
-export function ExpiringLeadsDialog({ broker, onClose }: { broker: { id: string; name: string } | null; onClose: () => void }) {
+export function ExpiringLeadsDialog({
+  broker,
+  mode,
+  onClose,
+}: {
+  broker: { id: string; name: string } | null;
+  mode: ExpiringLeadsMode;
+  onClose: () => void;
+}) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const [tick, setTick] = useState(0);
   const [announcement, setAnnouncement] = useState("");
+  const quarantine = mode === "quarantine";
   const query = useQuery({
-    queryKey: ["expiring-leads", broker?.id],
-    queryFn: () => loadExpiringLeads(broker?.id ?? ""),
+    queryKey: ["expiring-leads", broker?.id, mode],
+    queryFn: () => loadExpiringLeads(broker?.id ?? "", mode, true),
     enabled: Boolean(broker),
-    staleTime: 60_000,
+    staleTime: 0,
   });
 
   useEffect(() => {
@@ -102,17 +126,7 @@ export function ExpiringLeadsDialog({ broker, onClose }: { broker: { id: string;
   useEffect(() => {
     setTick(0);
     setAnnouncement("");
-  }, [broker?.id]);
-
-  useEffect(() => {
-    if (!broker || !query.data?.ok) return;
-    const items = query.data.items;
-    if (!items.length) {
-      setAnnouncement(`${broker.name} está em dia. Nenhum lead crítico.`);
-      return;
-    }
-    setAnnouncement(`${items.length} ${items.length === 1 ? "lead precisa" : "leads precisam"} de atenção para ${broker.name}.`);
-  }, [broker, query.data]);
+  }, [broker?.id, mode]);
 
   const items = query.data?.items ?? [];
   const hasDeadlines = items.some((item) => item.deadline);
@@ -129,16 +143,41 @@ export function ExpiringLeadsDialog({ broker, onClose }: { broker: { id: string;
     return () => window.clearInterval(interval);
   }, [broker, hasDeadlines, tickMs]);
 
-  if (!broker) return null;
+  useEffect(() => {
+    if (!broker || !query.data?.ok) return;
+    if (!items.length) {
+      setAnnouncement(
+        quarantine
+          ? `${broker.name} não tem leads em quarentena no momento.`
+          : `${broker.name} está em dia. Nenhum lead crítico.`,
+      );
+      return;
+    }
+    setAnnouncement(
+      quarantine
+        ? `${items.length} ${items.length === 1 ? "lead em quarentena" : "leads em quarentena"} para ${broker.name}.`
+        : `${items.length} ${items.length === 1 ? "lead precisa" : "leads precisam"} de atenção para ${broker.name}.`,
+    );
+  }, [broker, items.length, query.data, quarantine]);
 
   const expiredCount = items.filter((item) => item.deadline && item.msRemaining < 0).length;
   const dueCount = items.filter((item) => item.deadline && item.msRemaining >= 0).length;
   const stagnantCount = items.filter((item) => !item.deadline).length;
-  const groups = [
-    { name: "Já expirados", icon: AlertCircle, tone: "expired", items: items.filter((item) => item.deadline && item.msRemaining < 0) },
-    { name: "Vencem nos próximos 7 dias", icon: AlertTriangle, tone: "due", items: items.filter((item) => item.deadline && item.msRemaining >= 0) },
-    { name: "Sem movimentação há 3+ dias", icon: MessageSquareOff, tone: "stagnant", items: items.filter((item) => !item.deadline) },
-  ];
+  const groups = useMemo(() => (
+    quarantine
+      ? [
+          { name: "Prazo da quarentena vencido", icon: AlertCircle, tone: "expired", items: items.filter((item) => item.deadline && item.msRemaining < 0) },
+          { name: "Prazo da quarentena ativo", icon: AlertTriangle, tone: "due", items: items.filter((item) => item.deadline && item.msRemaining >= 0) },
+          { name: "Sem prazo da quarentena", icon: MessageSquareOff, tone: "stagnant", items: items.filter((item) => !item.deadline) },
+        ]
+      : [
+          { name: "Já expirados", icon: AlertCircle, tone: "expired", items: items.filter((item) => item.deadline && item.msRemaining < 0) },
+          { name: "Vencem nos próximos 7 dias", icon: AlertTriangle, tone: "due", items: items.filter((item) => item.deadline && item.msRemaining >= 0) },
+          { name: "Sem movimentação há 3+ dias", icon: MessageSquareOff, tone: "stagnant", items: items.filter((item) => !item.deadline) },
+        ]
+  ), [items, quarantine]);
+
+  if (!broker) return null;
 
   return (
     <div className="export-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -146,14 +185,31 @@ export function ExpiringLeadsDialog({ broker, onClose }: { broker: { id: string;
       <div ref={dialogRef} className="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
         <header>
           <div>
-            <h2 id="export-dialog-title">Leads Críticos · {broker.name}</h2>
-            <p>Prazo Padrão em até 7 dias (EM ANDAMENTO), ou mais de 2 dias sem movimentação. Contagem regressiva para prazos próximos. Sem Roleta Atual não entra.</p>
+            <h2 id="export-dialog-title">
+              {quarantine ? "Leads em Quarentena" : "Leads Críticos"} · {broker.name}
+            </h2>
+            <p>
+              {quarantine
+                ? "Negócios com status EM QUARENTENA no Bitrix24. O prazo exibido vem do campo Prazo da quarentena."
+                : "Prazo Padrão em até 7 dias (EM ANDAMENTO), ou mais de 2 dias sem movimentação. Sem Roleta Atual não entra."}
+            </p>
             {query.data?.ok && items.length ? (
               <p className="export-dialog-summary">
-                {items.length} {items.length === 1 ? "lead precisa" : "leads precisam"} de atenção
-                {expiredCount ? ` · ${expiredCount} expirado${expiredCount === 1 ? "" : "s"}` : ""}
-                {dueCount ? ` · ${dueCount} no prazo` : ""}
-                {stagnantCount ? ` · ${stagnantCount} parado${stagnantCount === 1 ? "" : "s"}` : ""}
+                {quarantine ? (
+                  <>
+                    {items.length} em quarentena
+                    {expiredCount ? ` · ${expiredCount} com prazo vencido` : ""}
+                    {dueCount ? ` · ${dueCount} com prazo ativo` : ""}
+                    {stagnantCount ? ` · ${stagnantCount} sem prazo definido` : ""}
+                  </>
+                ) : (
+                  <>
+                    {items.length} {items.length === 1 ? "lead precisa" : "leads precisam"} de atenção
+                    {expiredCount ? ` · ${expiredCount} expirado${expiredCount === 1 ? "" : "s"}` : ""}
+                    {dueCount ? ` · ${dueCount} no prazo` : ""}
+                    {stagnantCount ? ` · ${stagnantCount} parado${stagnantCount === 1 ? "" : "s"}` : ""}
+                  </>
+                )}
               </p>
             ) : null}
           </div>
@@ -165,8 +221,12 @@ export function ExpiringLeadsDialog({ broker, onClose }: { broker: { id: string;
           {query.data?.ok && !items.length ? (
             <div className="empty-state export-dialog-empty">
               <CheckCircle2 size={28} aria-hidden="true" />
-              <h3>Nenhum lead crítico</h3>
-              <p>Este corretor está em dia no momento.</p>
+              <h3>{quarantine ? "Nenhum lead em quarentena" : "Nenhum lead crítico"}</h3>
+              <p>
+                {quarantine
+                  ? "Este corretor não tem negócios com status EM QUARENTENA no momento."
+                  : "Este corretor está em dia no momento."}
+              </p>
               <div className="export-empty-actions">
                 <button className="button button-secondary" type="button" onClick={onClose}>Fechar painel</button>
               </div>
@@ -175,7 +235,7 @@ export function ExpiringLeadsDialog({ broker, onClose }: { broker: { id: string;
           {groups.map((group) => group.items.length ? (
             <section className={`export-lead-group is-${group.tone}`} key={group.name}>
               <h3><group.icon size={14} aria-hidden="true" />{group.name} ({group.items.length})</h3>
-              <div>{group.items.map((lead) => <LeadRow lead={lead} tick={tick} tickMs={tickMs} key={lead.dealId} />)}</div>
+              <div>{group.items.map((lead) => <LeadRow lead={lead} mode={mode} tick={tick} tickMs={tickMs} key={lead.dealId} />)}</div>
             </section>
           ) : null)}
         </div>

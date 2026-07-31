@@ -5,6 +5,7 @@ import { z } from "zod";
 import { assignDealToCorretor } from "@/lib/bitrix/assign-deal";
 import { hasBitrixEnv } from "@/lib/bitrix/client";
 import { loadAuthProfile } from "@/lib/auth/load-auth-profile";
+import { MAX_ACTIVE_LEADS } from "@/lib/capture-capacity";
 import { isOportunidadeDisponivel } from "@/lib/data/oportunidade-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -22,8 +23,9 @@ function captureErrorMessage(code: string) {
   switch (code) {
     case "corretor_bloqueado":
       return "Sua captação está bloqueada. Aguarde a liberação da liderança.";
+    case "limite_leads_ativos_atingido":
     case "limite_diario_atingido":
-      return "Você atingiu o limite diário de capturas.";
+      return "Você já possui 6 leads ativos. Novas vagas são liberadas pela auditoria da liderança.";
     case "roleta_sem_oportunidades":
       return "Não há oportunidades disponíveis agora.";
     case "roleta_nao_autorizada":
@@ -152,11 +154,23 @@ export async function captarOportunidade(input?: unknown): Promise<ActionResult>
   const roletaId = parsed.data.roletaId;
   const today = new Date().toISOString().slice(0, 10);
 
-  const [{ data: corretor }, { data: bloqueio }, { data: autorizados }, { data: capturaAtual }] = await Promise.all([
+  const [
+    { data: corretor },
+    { data: bloqueio },
+    { data: autorizados },
+    { data: capturaAtual },
+    capacidadeResult,
+  ] = await Promise.all([
     admin.from("usuarios").select("bitrix_user_id").eq("id", userId).single(),
     admin.from("bloqueios").select("id").eq("corretor_id", userId).is("liberado_em", null).maybeSingle(),
     admin.from("roletas_corretor").select("roleta_id").eq("corretor_id", userId),
     admin.from("capturas_diarias").select("quantidade_captada, limite_do_dia").eq("corretor_id", userId).eq("data", today).maybeSingle(),
+    admin
+      .from("oportunidades")
+      .select("id", { count: "exact", head: true })
+      .eq("corretor_id", userId)
+      .not("captada_em", "is", null)
+      .is("auditoria_aprovada_em", null),
   ]);
 
   const authorizedRoletaIds = (autorizados ?? []).map((item) => item.roleta_id);
@@ -177,9 +191,9 @@ export async function captarOportunidade(input?: unknown): Promise<ActionResult>
   }
 
   const capturados = capturaAtual?.quantidade_captada ?? 0;
-  const limite = capturaAtual?.limite_do_dia ?? 6;
-  if (capturados >= limite) {
-    return { ok: false, error: captureErrorMessage("limite_diario_atingido"), code: "limite_diario_atingido" };
+  const limite = MAX_ACTIVE_LEADS;
+  if ((capacidadeResult.count ?? 0) >= limite) {
+    return { ok: false, error: captureErrorMessage("limite_leads_ativos_atingido"), code: "limite_leads_ativos_atingido" };
   }
 
   const roletaIdsParaBusca = roletaId ? [roletaId] : authorizedRoletaIds;
@@ -216,6 +230,9 @@ export async function captarOportunidade(input?: unknown): Promise<ActionResult>
   }
 
   if (updateError) {
+    if (updateError.message.includes("limite_leads_ativos_atingido")) {
+      return { ok: false, error: captureErrorMessage("limite_leads_ativos_atingido"), code: "limite_leads_ativos_atingido" };
+    }
     return { ok: false, error: updateError.message };
   }
 
@@ -253,7 +270,6 @@ export async function captarOportunidade(input?: unknown): Promise<ActionResult>
     }
   }
 
-  const novaQuantidade = capturados + 1;
   try {
     const { ensurePendingAuditoriaForCorretor } = await import("@/lib/data/auditorias");
     await ensurePendingAuditoriaForCorretor(admin, userId);
@@ -263,6 +279,7 @@ export async function captarOportunidade(input?: unknown): Promise<ActionResult>
 
   revalidatePath("/corretor");
   revalidatePath("/auditorias");
+  revalidatePath("/resultados");
   return {
     ok: true,
     titulo: String(oportunidade.titulo ?? "Oportunidade captada"),

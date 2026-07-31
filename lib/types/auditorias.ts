@@ -1,3 +1,15 @@
+export type AuditoriaLeadItem = {
+  id: string;
+  bitrix_deal_id: string;
+  titulo: string;
+  captada_em: string;
+  etapa_atual: string;
+  ultima_atualizacao: string | null;
+  tentativa_contato_ok: boolean;
+  comentario_bitrix_ok: boolean;
+  etapa_atualizada_ok: boolean;
+};
+
 export type AuditoriaFilaItem = {
   id: string;
   corretor_id: string;
@@ -8,6 +20,7 @@ export type AuditoriaFilaItem = {
   sem_contato: number;
   ultima_captura: string | null;
   espera_minutos: number;
+  leads: AuditoriaLeadItem[];
 };
 
 export type AuditoriasPainelData = {

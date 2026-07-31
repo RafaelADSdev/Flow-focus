@@ -5,7 +5,7 @@ export default function CarteiraLoading() {
     <PageLoading
       variant="carteira"
       label="Carregando carteira…"
-      description="Buscando roletas, limite diário e capturas recentes."
+      description="Buscando roletas, capacidade ativa e capturas recentes."
     />
   );
 }

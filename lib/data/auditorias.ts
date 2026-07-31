@@ -1,41 +1,18 @@
 import "server-only";
 
-import { z } from "zod";
+import { fetchBitrixDealStages, stripStageSemanticSuffix } from "@/lib/bitrix/deal-stages";
+import { refreshCapturedDealsForCorretores } from "@/lib/bitrix/refresh-captured-deals";
 import { canManageOperacao, getViewerContext, type ViewerContext } from "@/lib/auth/viewer-context";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { hasSupabaseEnv, hasSupabaseSecretKey } from "@/lib/supabase/env";
-import { isMissingRpc } from "@/lib/supabase/rpc";
-import type { AuditoriasPainelData } from "@/lib/types/auditorias";
+import type { AuditoriaFilaItem, AuditoriasPainelData } from "@/lib/types/auditorias";
 
 export type { AuditoriaFilaItem, AuditoriasPainelData } from "@/lib/types/auditorias";
-
-const filaItemSchema = z.object({
-  id: z.string().uuid(),
-  corretor_id: z.string().uuid(),
-  corretor: z.string(),
-  equipe: z.string(),
-  capturados: z.number().int().nonnegative(),
-  atualizados: z.number().int().nonnegative(),
-  sem_contato: z.number().int().nonnegative(),
-  ultima_captura: z.string().nullable(),
-  espera_minutos: z.number().int().nonnegative(),
-});
-
-const painelSchema = z.object({
-  aguardando: z.number().int().nonnegative(),
-  aprovadas_semana: z.number().int().nonnegative(),
-  bloqueados: z.number().int().nonnegative(),
-  tempo_medio_horas: z.number().nonnegative(),
-  tempo_medio_variacao_min: z.number().int(),
-  fila: z.array(filaItemSchema),
-  gerado_em: z.string(),
-});
 
 type AuditoriaRow = {
   id: string;
   corretor_id: string;
-  status?: string | null;
+  status: string;
   data: string;
   concluida_em: string | null;
 };
@@ -45,13 +22,21 @@ type UsuarioRow = {
   nome: string;
   equipe_id: string | null;
   equipe_nome: string | null;
-  ativo: boolean;
-  perfil: string | null;
 };
 
-function isMissingColumn(error: { message?: string } | null | undefined, column: string) {
-  return Boolean(error?.message?.includes(column));
-}
+type OportunidadeAuditoriaRow = {
+  id: string;
+  bitrix_deal_id: string;
+  corretor_id: string;
+  titulo: string | null;
+  captada_em: string;
+  bitrix_stage_id: string | null;
+  ultima_atualizacao_bitrix: string | null;
+  tentativa_contato_ok: boolean;
+  comentario_bitrix_ok: boolean;
+  etapa_atualizada_ok: boolean;
+  auditoria_aprovada_em: string | null;
+};
 
 export function getEmptyAuditoriasPainel(): AuditoriasPainelData {
   return {
@@ -65,79 +50,16 @@ export function getEmptyAuditoriasPainel(): AuditoriasPainelData {
   };
 }
 
-function shouldUseAdminFallback(error: { message?: string; code?: string } | null) {
-  if (!error) return false;
-  return isMissingRpc(error, "obter_painel_auditorias") || Boolean(error.message?.includes("perfil_atual"));
-}
-
 function inViewerScope(viewer: ViewerContext, equipeId: string | null) {
-  if (viewer.perfil === "admin" || viewer.perfil === "diretora") return true;
-  return equipeId === viewer.equipeId;
+  return viewer.perfil === "admin" || viewer.perfil === "diretora" || equipeId === viewer.equipeId;
 }
 
 function startOfWeek(date = new Date()) {
   const copy = new Date(date);
   const day = copy.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
   copy.setHours(0, 0, 0, 0);
-  copy.setDate(copy.getDate() + diff);
+  copy.setDate(copy.getDate() + (day === 0 ? -6 : 1 - day));
   return copy;
-}
-
-function isPendente(auditoria: AuditoriaRow) {
-  if (auditoria.status) return auditoria.status === "pendente";
-  return !auditoria.concluida_em;
-}
-
-function isAprovado(auditoria: AuditoriaRow) {
-  if (auditoria.status) return auditoria.status === "aprovado";
-  return Boolean(auditoria.concluida_em);
-}
-
-async function listAuditorias(admin: ReturnType<typeof createAdminClient>) {
-  const withStatus = await admin
-    .from("auditorias")
-    .select("id, corretor_id, status, data, concluida_em");
-
-  if (isMissingColumn(withStatus.error, "status")) {
-    const fallback = await admin
-      .from("auditorias")
-      .select("id, corretor_id, data, concluida_em");
-    if (fallback.error) throw new Error(fallback.error.message);
-    return (fallback.data ?? []) as AuditoriaRow[];
-  }
-
-  if (withStatus.error) throw new Error(withStatus.error.message);
-  return (withStatus.data ?? []) as AuditoriaRow[];
-}
-
-async function listOportunidadesResumo(admin: ReturnType<typeof createAdminClient>) {
-  const withStatus = await admin
-    .from("oportunidades")
-    .select("corretor_id, captada_em, status, ultima_atualizacao_bitrix");
-
-  if (isMissingColumn(withStatus.error, "status")) {
-    const fallback = await admin
-      .from("oportunidades")
-      .select("corretor_id, captada_em, ultima_atualizacao_bitrix");
-    if (fallback.error) throw new Error(fallback.error.message);
-    return fallback.data ?? [];
-  }
-
-  if (withStatus.error) throw new Error(withStatus.error.message);
-  return withStatus.data ?? [];
-}
-
-function oportunidadeAtualizada(oportunidade: {
-  captada_em: string | null;
-  status?: string | null;
-  ultima_atualizacao_bitrix?: string | null;
-}) {
-  if (oportunidade.status && ["em_trabalho", "convertida", "perdida"].includes(oportunidade.status)) {
-    return true;
-  }
-  if (!oportunidade.captada_em || !oportunidade.ultima_atualizacao_bitrix) return false;
-  return oportunidade.ultima_atualizacao_bitrix > oportunidade.captada_em;
 }
 
 async function resolveLiderId(
@@ -166,216 +88,194 @@ export async function ensurePendingAuditoriaForCorretor(
   admin: ReturnType<typeof createAdminClient>,
   corretorId: string,
 ) {
-  const existing = await listAuditorias(admin);
-  if (existing.some((item) => item.corretor_id === corretorId && isPendente(item))) {
-    return;
-  }
+  const { data: existing } = await admin
+    .from("auditorias")
+    .select("id")
+    .eq("corretor_id", corretorId)
+    .eq("status", "pendente")
+    .limit(1)
+    .maybeSingle();
+  if (existing) return;
 
-  const { data: usuario, error: usuarioError } = await admin
+  const { data: usuario } = await admin
     .from("usuarios")
-    .select("id, equipe_id")
+    .select("equipe_id")
     .eq("id", corretorId)
     .maybeSingle();
-  if (usuarioError || !usuario) return;
+  if (!usuario) return;
 
   const liderId = await resolveLiderId(admin, usuario.equipe_id, corretorId);
-  const payload = {
+  const { error } = await admin.from("auditorias").insert({
     corretor_id: corretorId,
     lider_id: liderId,
-    data: new Date().toISOString(),
-    observacoes: null,
+    status: "pendente",
     criterios_avaliados: [],
-  };
+  } as never);
 
-  let { error } = await admin.from("auditorias").insert({ ...payload, status: "pendente" } as never);
-  if (isMissingColumn(error, "status")) {
-    ({ error } = await admin.from("auditorias").insert(payload as never));
-  }
-  if (error && !error.message.toLowerCase().includes("duplicate")) {
-    throw new Error(error.message);
-  }
+  if (error && !error.message.toLowerCase().includes("duplicate")) throw new Error(error.message);
 }
 
-async function ensurePendingAuditoriasFromCapturas(admin: ReturnType<typeof createAdminClient>) {
-  const today = new Date().toISOString().slice(0, 10);
-  const { data: capturas, error } = await admin
-    .from("capturas_diarias")
-    .select("corretor_id, quantidade_captada")
-    .eq("data", today);
+async function ensurePendingAuditorias(admin: ReturnType<typeof createAdminClient>) {
+  const { data, error } = await admin
+    .from("oportunidades")
+    .select("corretor_id")
+    .not("corretor_id", "is", null)
+    .not("captada_em", "is", null)
+    .is("auditoria_aprovada_em", null);
   if (error) throw new Error(error.message);
 
-  const emAndamento = (capturas ?? []).filter((item) => (item.quantidade_captada ?? 0) > 0);
+  const ids = [...new Set((data ?? []).map((item) => item.corretor_id).filter(Boolean))] as string[];
+  for (const corretorId of ids) await ensurePendingAuditoriaForCorretor(admin, corretorId);
+  return ids;
+}
 
-  for (const item of emAndamento) {
-    await ensurePendingAuditoriaForCorretor(admin, item.corretor_id);
-  }
+function averageHours(items: Array<{ captada_em: string; auditoria_aprovada_em: string | null }>) {
+  const approved = items.filter((item) => item.auditoria_aprovada_em);
+  if (!approved.length) return 0;
+  const total = approved.reduce((sum, item) => (
+    sum + (Date.parse(item.auditoria_aprovada_em!) - Date.parse(item.captada_em)) / 3_600_000
+  ), 0);
+  return Math.round((total / approved.length) * 10) / 10;
 }
 
 async function loadAuditoriasFromTables(viewer: ViewerContext): Promise<AuditoriasPainelData> {
   const admin = createAdminClient();
-  await ensurePendingAuditoriasFromCapturas(admin);
+  const activeBrokerIds = await ensurePendingAuditorias(admin);
+  await refreshCapturedDealsForCorretores(activeBrokerIds, { onlyPendingAudit: true });
 
-  const inicioSemana = startOfWeek().toISOString();
-  const inicioSemanaAnterior = new Date(startOfWeek());
-  inicioSemanaAnterior.setDate(inicioSemanaAnterior.getDate() - 7);
-  const inicioSemanaAnteriorIso = inicioSemanaAnterior.toISOString();
-  const hoje = new Date().toISOString().slice(0, 10);
-
-  const [usuariosResult, bloqueiosResult, capturasResult, auditorias] = await Promise.all([
-    admin.from("usuarios").select("id, nome, equipe_id, equipe_nome, ativo, perfil").eq("ativo", true),
+  const [usuariosResult, bloqueiosResult, auditoriasResult, oportunidadesResult, stages] = await Promise.all([
+    admin.from("usuarios").select("id, nome, equipe_id, equipe_nome").eq("ativo", true).eq("perfil", "corretor"),
     admin.from("bloqueios").select("corretor_id").is("liberado_em", null),
-    admin.from("capturas_diarias").select("corretor_id, quantidade_captada, data"),
-    listAuditorias(admin),
+    admin.from("auditorias").select("id, corretor_id, status, data, concluida_em"),
+    admin
+      .from("oportunidades")
+      .select("id, bitrix_deal_id, corretor_id, titulo, captada_em, bitrix_stage_id, ultima_atualizacao_bitrix, tentativa_contato_ok, comentario_bitrix_ok, etapa_atualizada_ok, auditoria_aprovada_em")
+      .not("corretor_id", "is", null)
+      .not("captada_em", "is", null),
+    fetchBitrixDealStages(process.env.BITRIX24_CAPTURE_CATEGORY_ID ?? "16").catch(() => []),
   ]);
 
   if (usuariosResult.error) throw new Error(usuariosResult.error.message);
   if (bloqueiosResult.error) throw new Error(bloqueiosResult.error.message);
-  if (capturasResult.error) throw new Error(capturasResult.error.message);
+  if (auditoriasResult.error) throw new Error(auditoriasResult.error.message);
+  if (oportunidadesResult.error) throw new Error(oportunidadesResult.error.message);
 
   const usuarios = new Map(
-    ((usuariosResult.data ?? []) as UsuarioRow[]).map((usuario) => [usuario.id, {
-      ...usuario,
-      perfil: usuario.perfil ?? "corretor",
-    }]),
+    ((usuariosResult.data ?? []) as UsuarioRow[])
+      .filter((item) => inViewerScope(viewer, item.equipe_id))
+      .map((item) => [item.id, item]),
   );
-
-  const scopedAuditorias = auditorias.filter((auditoria) => {
-    const usuario = usuarios.get(auditoria.corretor_id);
-    return usuario && inViewerScope(viewer, usuario.equipe_id);
-  });
-
-  const pendentes = scopedAuditorias.filter(isPendente);
-  const corretorIdsPendentes = [...new Set(pendentes.map((item) => item.corretor_id))];
-
-  if (corretorIdsPendentes.length) {
-    const { refreshCapturedDealsForCorretores } = await import("@/lib/bitrix/refresh-captured-deals");
-    await refreshCapturedDealsForCorretores(corretorIdsPendentes);
+  const auditorias = (auditoriasResult.data ?? []) as AuditoriaRow[];
+  const oportunidades = (oportunidadesResult.data ?? []) as OportunidadeAuditoriaRow[];
+  const active = oportunidades.filter((item) => !item.auditoria_aprovada_em && usuarios.has(item.corretor_id));
+  const stageNames = new Map(stages.map((stage) => [stage.id, stage.name]));
+  const pendingAuditByBroker = new Map(
+    auditorias
+      .filter((item) => item.status === "pendente" && usuarios.has(item.corretor_id))
+      .map((item) => [item.corretor_id, item]),
+  );
+  const activeByBroker = new Map<string, OportunidadeAuditoriaRow[]>();
+  for (const lead of active) {
+    const bucket = activeByBroker.get(lead.corretor_id) ?? [];
+    bucket.push(lead);
+    activeByBroker.set(lead.corretor_id, bucket);
+  }
+  const lastCaptureByBroker = new Map<string, string>();
+  for (const lead of oportunidades) {
+    if (!lead.captada_em || !usuarios.has(lead.corretor_id)) continue;
+    const current = lastCaptureByBroker.get(lead.corretor_id);
+    if (!current || lead.captada_em > current) lastCaptureByBroker.set(lead.corretor_id, lead.captada_em);
   }
 
-  const oportunidades = await listOportunidadesResumo(admin);
-  const bloqueados = new Set(
-    (bloqueiosResult.data ?? [])
-      .map((item) => item.corretor_id)
-      .filter((corretorId) => {
-        const usuario = usuarios.get(corretorId);
-        return usuario && inViewerScope(viewer, usuario.equipe_id);
-      }),
-  );
+  const fila: AuditoriaFilaItem[] = [];
+  for (const [corretorId, usuario] of usuarios) {
+    const sortedLeads = [...(activeByBroker.get(corretorId) ?? [])].sort((a, b) => a.captada_em.localeCompare(b.captada_em));
+    const hasPendingLeads = sortedLeads.length > 0;
+    if (!hasPendingLeads && !lastCaptureByBroker.has(corretorId) && !pendingAuditByBroker.has(corretorId)) continue;
 
-  const capturasHoje = new Map(
-    (capturasResult.data ?? [])
-      .filter((item) => item.data === hoje)
-      .map((item) => [item.corretor_id, item.quantidade_captada ?? 0]),
-  );
-
-  const oportunidadesPorCorretor = new Map<string, { atualizados: number; ultimaCaptura: string | null; capturadosHoje: number }>();
-  for (const oportunidade of oportunidades) {
-    if (!oportunidade.corretor_id || !oportunidade.captada_em) continue;
-    const atual = oportunidadesPorCorretor.get(oportunidade.corretor_id) ?? {
-      atualizados: 0,
-      ultimaCaptura: null,
-      capturadosHoje: 0,
-    };
-    if (oportunidade.captada_em.slice(0, 10) === hoje) {
-      atual.capturadosHoje += 1;
-      if (oportunidadeAtualizada(oportunidade)) atual.atualizados += 1;
+    let auditoria = pendingAuditByBroker.get(corretorId);
+    if (hasPendingLeads && !auditoria) {
+      await ensurePendingAuditoriaForCorretor(admin, corretorId);
+      const { data } = await admin
+        .from("auditorias")
+        .select("id, corretor_id, status, data, concluida_em")
+        .eq("corretor_id", corretorId)
+        .eq("status", "pendente")
+        .maybeSingle();
+      auditoria = (data as AuditoriaRow | null) ?? undefined;
     }
-    if (!atual.ultimaCaptura || oportunidade.captada_em > atual.ultimaCaptura) {
-      atual.ultimaCaptura = oportunidade.captada_em;
-    }
-    oportunidadesPorCorretor.set(oportunidade.corretor_id, atual);
-  }
+    if (hasPendingLeads && !auditoria) continue;
 
-  const aprovadasSemana = scopedAuditorias.filter(
-    (item) => isAprovado(item) && item.concluida_em && item.concluida_em >= inicioSemana,
-  );
-
-  const tempoMedio = (items: AuditoriaRow[]) => {
-    const concluidas = items.filter((item) => item.concluida_em);
-    if (!concluidas.length) return 0;
-    const total = concluidas.reduce((sum, item) => {
-      const inicio = new Date(item.data).getTime();
-      const fim = new Date(item.concluida_em!).getTime();
-      return sum + (fim - inicio) / 3_600_000;
-    }, 0);
-    return Math.round((total / concluidas.length) * 10) / 10;
-  };
-
-  const tempoAtual = tempoMedio(scopedAuditorias.filter((item) => item.concluida_em && item.concluida_em >= inicioSemana));
-  const tempoAnterior = tempoMedio(
-    scopedAuditorias.filter(
-      (item) => item.concluida_em
-        && item.concluida_em >= inicioSemanaAnteriorIso
-        && item.concluida_em < inicioSemana,
-    ),
-  );
-
-  const fila = pendentes.map((auditoria) => {
-    const usuario = usuarios.get(auditoria.corretor_id)!;
-    const capturados = capturasHoje.get(auditoria.corretor_id)
-      ?? oportunidadesPorCorretor.get(auditoria.corretor_id)?.capturadosHoje
-      ?? 0;
-    const resumo = oportunidadesPorCorretor.get(auditoria.corretor_id) ?? {
-      atualizados: 0,
-      ultimaCaptura: null,
-      capturadosHoje: 0,
-    };
-    const esperaMinutos = Math.max(Math.floor((Date.now() - new Date(auditoria.data).getTime()) / 60_000), 0);
-    return {
-      id: auditoria.id,
-      corretor_id: auditoria.corretor_id,
+    const oldest = sortedLeads[0]?.captada_em;
+    fila.push({
+      id: auditoria?.id ?? corretorId,
+      corretor_id: corretorId,
       corretor: usuario.nome,
       equipe: usuario.equipe_nome ?? "Sem equipe",
-      capturados,
-      atualizados: resumo.atualizados,
-      sem_contato: Math.max(capturados - resumo.atualizados, 0),
-      ultima_captura: resumo.ultimaCaptura,
-      espera_minutos: esperaMinutos,
-    };
-  }).sort((a, b) => b.espera_minutos - a.espera_minutos);
+      capturados: sortedLeads.length,
+      atualizados: sortedLeads.filter((lead) => lead.ultima_atualizacao_bitrix && lead.ultima_atualizacao_bitrix > lead.captada_em).length,
+      sem_contato: sortedLeads.filter((lead) => !lead.tentativa_contato_ok).length,
+      ultima_captura: lastCaptureByBroker.get(corretorId) ?? null,
+      espera_minutos: oldest ? Math.max(Math.floor((Date.now() - Date.parse(oldest)) / 60_000), 0) : 0,
+      leads: sortedLeads.map((lead) => ({
+        id: lead.id,
+        bitrix_deal_id: lead.bitrix_deal_id,
+        titulo: lead.titulo?.trim() || `Negócio #${lead.bitrix_deal_id}`,
+        captada_em: lead.captada_em,
+        etapa_atual: stageNames.get(stripStageSemanticSuffix(lead.bitrix_stage_id)) ?? "Etapa não identificada",
+        ultima_atualizacao: lead.ultima_atualizacao_bitrix,
+        tentativa_contato_ok: lead.tentativa_contato_ok,
+        comentario_bitrix_ok: lead.comentario_bitrix_ok,
+        etapa_atualizada_ok: lead.etapa_atualizada_ok,
+      })),
+    });
+  }
 
-  return painelSchema.parse({
-    aguardando: pendentes.length,
-    aprovadas_semana: aprovadasSemana.length,
+  const inicioSemana = startOfWeek();
+  const inicioSemanaAnterior = new Date(inicioSemana);
+  inicioSemanaAnterior.setDate(inicioSemanaAnterior.getDate() - 7);
+  const aprovadosSemana = oportunidades.filter((item) => (
+    item.auditoria_aprovada_em
+    && Date.parse(item.auditoria_aprovada_em) >= inicioSemana.getTime()
+    && usuarios.has(item.corretor_id)
+  ));
+  const aprovadosSemanaAnterior = oportunidades.filter((item) => (
+    item.auditoria_aprovada_em
+    && Date.parse(item.auditoria_aprovada_em) >= inicioSemanaAnterior.getTime()
+    && Date.parse(item.auditoria_aprovada_em) < inicioSemana.getTime()
+    && usuarios.has(item.corretor_id)
+  ));
+  const tempoAtual = averageHours(aprovadosSemana);
+  const tempoAnterior = averageHours(aprovadosSemanaAnterior);
+  const bloqueados = new Set(
+    (bloqueiosResult.data ?? []).map((item) => item.corretor_id).filter((id) => usuarios.has(id)),
+  );
+
+  return {
+    aguardando: active.length,
+    aprovadas_semana: aprovadosSemana.length,
     bloqueados: bloqueados.size,
     tempo_medio_horas: tempoAtual,
     tempo_medio_variacao_min: Math.round((tempoAnterior - tempoAtual) * 60),
-    fila,
+    fila: fila.sort((a, b) => {
+      if (a.capturados > 0 && b.capturados === 0) return -1;
+      if (a.capturados === 0 && b.capturados > 0) return 1;
+      if (a.capturados > 0 && b.capturados > 0) return b.espera_minutos - a.espera_minutos;
+      return a.corretor.localeCompare(b.corretor, "pt-BR");
+    }),
     gerado_em: new Date().toISOString(),
-  });
+  };
 }
 
 export async function getAuditoriasPainelData(): Promise<AuditoriasPainelData> {
-  if (!hasSupabaseEnv()) return getEmptyAuditoriasPainel();
-
+  if (!hasSupabaseEnv() || !hasSupabaseSecretKey()) return getEmptyAuditoriasPainel();
   const viewer = await getViewerContext();
-  if (!canManageOperacao(viewer?.perfil ?? null)) {
-    return getEmptyAuditoriasPainel();
+  if (!viewer || !canManageOperacao(viewer.perfil)) return getEmptyAuditoriasPainel();
+
+  try {
+    return await loadAuditoriasFromTables(viewer);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "erro desconhecido";
+    throw new Error(`Não foi possível carregar as auditorias: ${message}`);
   }
-
-  if (hasSupabaseSecretKey() && viewer) {
-    try {
-      return await loadAuditoriasFromTables(viewer);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "erro desconhecido";
-      throw new Error(`Não foi possível carregar as auditorias: ${message}`);
-    }
-  }
-
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("obter_painel_auditorias");
-
-  if (!error && data) {
-    return painelSchema.parse(data);
-  }
-
-  if (shouldUseAdminFallback(error) && viewer && hasSupabaseSecretKey()) {
-    return loadAuditoriasFromTables(viewer);
-  }
-
-  if (isMissingRpc(error, "obter_painel_auditorias")) {
-    return getEmptyAuditoriasPainel();
-  }
-
-  throw new Error(`Não foi possível carregar as auditorias: ${error?.message ?? "erro desconhecido"}`);
 }

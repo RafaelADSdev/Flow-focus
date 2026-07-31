@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { loadAuthProfile } from "@/lib/auth/load-auth-profile";
+import { MAX_ACTIVE_LEADS } from "@/lib/capture-capacity";
 import { isOportunidadeDisponivel, mapOportunidadeStatus } from "@/lib/data/oportunidade-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -73,8 +74,6 @@ function shouldUseTableFallback(error: { message?: string; code?: string } | nul
 
 async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
   const admin = createAdminClient();
-  const today = new Date().toISOString().slice(0, 10);
-
   const oportunidadesPromise = (async () => {
     const rows: Array<{
       id: string;
@@ -87,12 +86,13 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
       ultima_atualizacao_bitrix: string | null;
       bitrix_stage_id: string | null;
       roleta_atual: string | null;
+      auditoria_aprovada_em: string | null;
     }> = [];
 
     for (let from = 0; ; from += 1000) {
       const { data, error } = await admin
         .from("oportunidades")
-        .select("id, bitrix_deal_id, titulo, valor, captada_em, corretor_id, roleta_id, ultima_atualizacao_bitrix, bitrix_stage_id, roleta_atual")
+        .select("id, bitrix_deal_id, titulo, valor, captada_em, corretor_id, roleta_id, ultima_atualizacao_bitrix, bitrix_stage_id, roleta_atual, auditoria_aprovada_em")
         .order("id", { ascending: true })
         .range(from, from + 999);
       if (error) throw error;
@@ -106,14 +106,12 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
 
   const [
     usuarioResult,
-    capturaResult,
     bloqueioResult,
     atribuicoesResult,
     roletasResult,
     oportunidadesResult,
   ] = await Promise.all([
     admin.from("usuarios").select("nome, perfil, ativo").eq("id", userId).single(),
-    admin.from("capturas_diarias").select("quantidade_captada, limite_do_dia").eq("corretor_id", userId).eq("data", today).maybeSingle(),
     admin.from("bloqueios").select("id").eq("corretor_id", userId).is("liberado_em", null).limit(1),
     admin.from("roletas_corretor").select("roleta_id").eq("corretor_id", userId),
     admin.from("roletas").select("id, nome, descricao, ativa").eq("ativa", true).order("nome"),
@@ -124,13 +122,17 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
     throw new Error("Não foi possível carregar a carteira do usuário.");
   }
 
-  const capturados = capturaResult.data?.quantidade_captada ?? 0;
-  const limite = capturaResult.data?.limite_do_dia ?? 6;
+  const limite = MAX_ACTIVE_LEADS;
   const bloqueado = Boolean(bloqueioResult.data?.length);
+
+  const capturados = oportunidadesResult.filter((oportunidade) => (
+    oportunidade.corretor_id === userId
+    && Boolean(oportunidade.captada_em)
+    && !oportunidade.auditoria_aprovada_em
+  )).length;
 
   let estadoCiclo: CarteiraData["estado_ciclo"] = "captacao_liberada";
   if (bloqueado) estadoCiclo = "bloqueado";
-  // Só bloqueia novo lote ao fechar o limite; a fila de auditoria já acompanha desde a 1ª captura.
   else if (capturados >= limite) estadoCiclo = "auditoria_pendente";
 
   const roletaIds = new Set((atribuicoesResult.data ?? []).map((item) => item.roleta_id));

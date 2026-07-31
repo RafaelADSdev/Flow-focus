@@ -87,11 +87,11 @@ describe("schemas compartilhados", () => {
     expect(normalizePaginasAcesso("lider", ["/equipe"]))
       .toEqual(["/corretor", "/equipe"]);
     expect(normalizePaginasAcesso("diretora", ["/dashboard"]))
-      .toEqual(["/corretor", "/roletas", "/equipe", "/auditorias"]);
+      .toEqual(["/corretor", "/roletas", "/equipe", "/auditorias", "/resultados"]);
   });
 
   it("não troca carteira vazia do corretor por outra página", () => {
-    expect(normalizePaginasAcesso("corretor", [])).toEqual(["/corretor"]);
-    expect(normalizePaginasAcesso("corretor", null)).toEqual(["/corretor"]);
+    expect(normalizePaginasAcesso("corretor", [])).toEqual(["/corretor", "/resultados"]);
+    expect(normalizePaginasAcesso("corretor", null)).toEqual(["/corretor", "/resultados"]);
   });
 });

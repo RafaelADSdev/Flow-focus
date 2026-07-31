@@ -1,7 +1,7 @@
 "use client";
 
 /* Tela independente /equipe. Estrutura portada de equipe-export/source/team.tsx. */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -10,6 +10,7 @@ import {
   Ban,
   Calendar,
   Filter,
+  PauseCircle,
   RefreshCw,
   Search,
   Timer,
@@ -20,7 +21,7 @@ import {
 import { ExpiringLeadsDialog } from "@/components/expiring-leads-dialog";
 import { isLostStageName, TeamStageChart } from "@/components/team-stage-chart";
 import { loadBrokerExemptions, loadTeamPipeline } from "@/lib/actions/equipe";
-import type { BrokerPipelineRow } from "@/lib/types/equipe";
+import type { BrokerPipelineRow, ExpiringLeadsMode } from "@/lib/types/equipe";
 
 type BitrixFilter = "ativo" | "inativo" | "todos";
 const MONTH_NAMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -86,16 +87,28 @@ function groupBrokersByTeam(
 function BrokerTeamGroups({
   groups,
   exempt,
-  onOpen,
+  onOpenCritical,
+  onOpenQuarantine,
 }: {
   groups: ReturnType<typeof groupBrokersByTeam>;
   exempt: boolean;
-  onOpen: (row: BrokerPipelineRow) => void;
+  onOpenCritical: (row: BrokerPipelineRow) => void;
+  onOpenQuarantine: (row: BrokerPipelineRow) => void;
 }) {
   return groups.map(([name, groupRows]) => (
     <section className="export-team-group" key={name}>
       <header><Users size={16} aria-hidden="true" /><h3>{name}</h3><span className="export-team-count">{groupRows.length}</span></header>
-      <div>{groupRows.map((row) => <BrokerCard row={row} exempt={exempt} key={row.user.ID} onOpen={() => onOpen(row)} />)}</div>
+      <div>
+        {groupRows.map((row) => (
+          <BrokerCard
+            row={row}
+            exempt={exempt}
+            key={row.user.ID}
+            onOpenCritical={() => onOpenCritical(row)}
+            onOpenQuarantine={() => onOpenQuarantine(row)}
+          />
+        ))}
+      </div>
     </section>
   ));
 }
@@ -153,13 +166,26 @@ function LostStageTag({ name, count }: { name: string; count: number }) {
   );
 }
 
-function BrokerCard({ row, exempt, onOpen }: { row: BrokerPipelineRow; exempt: boolean; onOpen: () => void }) {
+function BrokerCard({
+  row,
+  exempt,
+  onOpenCritical,
+  onOpenQuarantine,
+}: {
+  row: BrokerPipelineRow;
+  exempt: boolean;
+  onOpenCritical: () => void;
+  onOpenQuarantine: () => void;
+}) {
   const pipelineStages = row.stages.filter((stage) => !isLostStageName(stage.name));
   const lostStages = row.stages.filter((stage) => isLostStageName(stage.name));
   const criticalById = Object.fromEntries(pipelineStages.map((stage) => [stage.stageId, stage.criticos]));
   const criticalLabel = row.criticos
     ? `Ver ${row.criticos} ${row.criticos === 1 ? "lead crítico" : "leads críticos"} de ${row.user.fullName}`
     : `${row.user.fullName} não tem leads críticos no momento`;
+  const quarantineLabel = row.quarentena
+    ? `Ver ${row.quarentena} ${row.quarentena === 1 ? "lead em quarentena" : "leads em quarentena"} de ${row.user.fullName}`
+    : `${row.user.fullName} não tem leads em quarentena no momento`;
 
   return (
     <article className={`export-broker-card${!row.user.active ? " is-inactive" : ""}`}>
@@ -194,17 +220,32 @@ function BrokerCard({ row, exempt, onOpen }: { row: BrokerPipelineRow; exempt: b
         {lostStages.length ? <div className="export-lost-list">{lostStages.map((stage) => <LostStageTag key={stage.stageId} name={stage.name} count={stage.count} />)}</div> : null}
       </div>
       <footer>
-        {row.criticos ? <span className="has-critical"><AlertTriangle size={14} aria-hidden="true" />{row.criticos} {row.criticos === 1 ? "lead crítico" : "leads críticos"}</span> : <span>Sem leads críticos</span>}
-        <button
-          className={row.criticos ? "button button-primary" : "button button-secondary"}
-          type="button"
-          onClick={onOpen}
-          disabled={!row.criticos}
-          aria-label={criticalLabel}
-        >
-          <Timer size={14} aria-hidden="true" />
-          Leads Críticos
-        </button>
+        <div className="export-broker-footer-meta">
+          {row.criticos ? <span className="has-critical"><AlertTriangle size={14} aria-hidden="true" />{row.criticos} críticos</span> : <span>Sem críticos</span>}
+          {row.quarentena ? <span className="has-quarantine"><PauseCircle size={14} aria-hidden="true" />{row.quarentena} em quarentena</span> : null}
+        </div>
+        <div className="export-broker-footer-actions">
+          <button
+            className={row.criticos ? "button button-primary" : "button button-secondary"}
+            type="button"
+            onClick={onOpenCritical}
+            disabled={!row.criticos}
+            aria-label={criticalLabel}
+          >
+            <Timer size={14} aria-hidden="true" />
+            Leads Críticos
+          </button>
+          <button
+            className={row.quarentena ? "button button-primary" : "button button-secondary"}
+            type="button"
+            onClick={onOpenQuarantine}
+            disabled={!row.quarentena}
+            aria-label={quarantineLabel}
+          >
+            <PauseCircle size={14} aria-hidden="true" />
+            Quarentena
+          </button>
+        </div>
       </footer>
     </article>
   );
@@ -216,11 +257,16 @@ export function TeamDashboard() {
   const [department, setDepartment] = useState("__all__");
   const [search, setSearch] = useState("");
   const [sortByCritical, setSortByCritical] = useState(false);
-  const [expiringFor, setExpiringFor] = useState<{ id: string; name: string } | null>(null);
-  const closeDialog = useCallback(() => setExpiringFor(null), []);
+  const [leadsDialog, setLeadsDialog] = useState<{ id: string; name: string; mode: ExpiringLeadsMode } | null>(null);
+  const closeDialog = useCallback(() => setLeadsDialog(null), []);
+  const forceFreshRef = useRef(false);
   const query = useQuery({
     queryKey: ["team-pipeline-current-user", month],
-    queryFn: () => loadTeamPipeline(month === "__all__" ? null : month),
+    queryFn: async () => {
+      const fresh = forceFreshRef.current;
+      forceFreshRef.current = false;
+      return loadTeamPipeline(month === "__all__" ? null : month, fresh);
+    },
     staleTime: 60_000,
     placeholderData: (previous) => previous,
   });
@@ -287,15 +333,20 @@ export function TeamDashboard() {
     setSortByCritical(false);
   }, []);
 
-  const openBroker = useCallback((row: BrokerPipelineRow) => {
-    setExpiringFor({ id: row.user.ID, name: row.user.fullName });
+  const openBrokerLeads = useCallback((row: BrokerPipelineRow, mode: ExpiringLeadsMode) => {
+    setLeadsDialog({ id: row.user.ID, name: row.user.fullName, mode });
   }, []);
+
+  const refreshTeam = useCallback(() => {
+    forceFreshRef.current = true;
+    void query.refetch();
+  }, [query]);
 
   return (
     <div className="export-team-page">
       <header className="export-team-header">
         <div><p>Equipe · Bitrix24 · sincronização automática</p><h1>{data?.scopeLabel ?? "Equipe"} · Pipeline {data?.categoryName ?? "Comercial - GERAL"}</h1><span>{rows.length} corretor(es) · {data?.totals.totalDeals ?? 0} negócios em andamento</span></div>
-        <button className="button button-secondary" type="button" onClick={() => query.refetch()} disabled={query.isFetching} aria-busy={query.isFetching}>
+        <button className="button button-secondary" type="button" onClick={refreshTeam} disabled={query.isFetching} aria-busy={query.isFetching}>
           <RefreshCw className={query.isFetching ? "is-spinning" : ""} size={15} aria-hidden="true" />
           Atualizar
         </button>
@@ -357,7 +408,7 @@ export function TeamDashboard() {
           <div>
             <strong>Não foi possível carregar a equipe.</strong>
             <p>{data.error}</p>
-            <button className="button button-secondary" type="button" onClick={() => query.refetch()} disabled={query.isFetching}>
+            <button className="button button-secondary" type="button" onClick={refreshTeam} disabled={query.isFetching}>
               Tentar de novo
             </button>
           </div>
@@ -380,14 +431,27 @@ export function TeamDashboard() {
         {priorityRows.length ? (
           <section className="export-priority-section">
             <header><AlertTriangle size={17} aria-hidden="true" /><h2>Prioridade · leads críticos</h2><span>({priorityRows.length})</span></header>
-            <div>{priorityRows.map((row) => <BrokerCard row={row} exempt={false} key={row.user.ID} onOpen={() => openBroker(row)} />)}</div>
+            <div>{priorityRows.map((row) => (
+              <BrokerCard
+                row={row}
+                exempt={false}
+                key={row.user.ID}
+                onOpenCritical={() => openBrokerLeads(row, "critical")}
+                onOpenQuarantine={() => openBrokerLeads(row, "quarantine")}
+              />
+            ))}</div>
           </section>
         ) : null}
 
         {bitrixFilter !== "inativo" ? (
           <section className="export-active-section">
             <header><UserCheck size={17} aria-hidden="true" /><h2>Ativos no Bitrix</h2><span>({activeBrokerRows.length})</span></header>
-            <BrokerTeamGroups groups={activeGroups} exempt={false} onOpen={openBroker} />
+            <BrokerTeamGroups
+              groups={activeGroups}
+              exempt={false}
+              onOpenCritical={(row) => openBrokerLeads(row, "critical")}
+              onOpenQuarantine={(row) => openBrokerLeads(row, "quarantine")}
+            />
             {!activeBrokerRows.length ? (
               <div className="export-card empty-state export-empty">
                 <UserCheck size={28} aria-hidden="true" />
@@ -395,7 +459,7 @@ export function TeamDashboard() {
                 <p>Nenhum resultado ativo no Bitrix para os filtros atuais.</p>
                 <div className="export-empty-actions">
                   {filtersActive ? <button className="button button-secondary" type="button" onClick={resetFilters}>Limpar filtros</button> : null}
-                  <button className="button button-secondary" type="button" onClick={() => query.refetch()} disabled={query.isFetching}>Atualizar sincronização</button>
+                  <button className="button button-secondary" type="button" onClick={refreshTeam} disabled={query.isFetching}>Atualizar sincronização</button>
                 </div>
               </div>
             ) : null}
@@ -405,7 +469,12 @@ export function TeamDashboard() {
         {bitrixFilter !== "ativo" && inactiveBrokerRows.length ? (
           <section className="export-inactive-section">
             <header><UserX size={17} aria-hidden="true" /><h2>Inativos no Bitrix</h2><span>({inactiveBrokerRows.length})</span></header>
-            <BrokerTeamGroups groups={inactiveGroups} exempt={false} onOpen={openBroker} />
+            <BrokerTeamGroups
+              groups={inactiveGroups}
+              exempt={false}
+              onOpenCritical={(row) => openBrokerLeads(row, "critical")}
+              onOpenQuarantine={(row) => openBrokerLeads(row, "quarantine")}
+            />
           </section>
         ) : null}
 
@@ -418,7 +487,7 @@ export function TeamDashboard() {
               <p>Nenhum resultado inativo no Bitrix para os filtros atuais.</p>
               <div className="export-empty-actions">
                 {filtersActive ? <button className="button button-secondary" type="button" onClick={resetFilters}>Limpar filtros</button> : null}
-                <button className="button button-secondary" type="button" onClick={() => query.refetch()} disabled={query.isFetching}>Atualizar sincronização</button>
+                <button className="button button-secondary" type="button" onClick={refreshTeam} disabled={query.isFetching}>Atualizar sincronização</button>
               </div>
             </div>
           </section>
@@ -427,7 +496,15 @@ export function TeamDashboard() {
         {exemptRows.length ? (
           <section className="export-exempt-section">
             <header><Ban size={17} aria-hidden="true" /><h2>Corretores dispensados da ferramenta</h2><span>({exemptRows.length})</span></header>
-            <div>{exemptRows.map((row) => <BrokerCard row={row} exempt key={row.user.ID} onOpen={() => openBroker(row)} />)}</div>
+            <div>{exemptRows.map((row) => (
+              <BrokerCard
+                row={row}
+                exempt
+                key={row.user.ID}
+                onOpenCritical={() => openBrokerLeads(row, "critical")}
+                onOpenQuarantine={() => openBrokerLeads(row, "quarantine")}
+              />
+            ))}</div>
           </section>
         ) : null}
 
@@ -437,7 +514,7 @@ export function TeamDashboard() {
             <h3>Nenhum colaborador no escopo</h3>
             <p>O departamento vinculado ao seu usuário Bitrix não retornou colaboradores. Verifique o vínculo de e-mail ou atualize a sincronização.</p>
             <div className="export-empty-actions">
-              <button className="button button-secondary" type="button" onClick={() => query.refetch()} disabled={query.isFetching}>Atualizar sincronização</button>
+              <button className="button button-secondary" type="button" onClick={refreshTeam} disabled={query.isFetching}>Atualizar sincronização</button>
             </div>
           </section>
         ) : null}
@@ -445,7 +522,11 @@ export function TeamDashboard() {
         <p className="export-updated">Última atualização: {new Date(data.updatedAt).toLocaleString("pt-BR")}</p>
       </> : null}
 
-      <ExpiringLeadsDialog broker={expiringFor} onClose={closeDialog} />
+      <ExpiringLeadsDialog
+        broker={leadsDialog ? { id: leadsDialog.id, name: leadsDialog.name } : null}
+        mode={leadsDialog?.mode ?? "critical"}
+        onClose={closeDialog}
+      />
     </div>
   );
 }
