@@ -2,8 +2,10 @@ import "server-only";
 
 import { z } from "zod";
 import { loadAuthProfile } from "@/lib/auth/load-auth-profile";
+import { captureAvailabilityValues, resolveCaptureAvailability } from "@/lib/capture-availability";
 import { MAX_ACTIVE_LEADS } from "@/lib/capture-capacity";
 import { isOportunidadeDisponivel, mapOportunidadeStatus } from "@/lib/data/oportunidade-status";
+import { isRoletaCaptura } from "@/lib/data/roleta-captura";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasSupabaseEnv, hasSupabaseSecretKey } from "@/lib/supabase/env";
@@ -47,18 +49,32 @@ const carteiraSchema = z.object({
   capturados: z.number().int().nonnegative(),
   limite: z.number().int().positive(),
   estado_ciclo: z.enum(["captacao_liberada", "auditoria_pendente", "bloqueado"]),
+  disponibilidade_captura: z.enum(captureAvailabilityValues).optional(),
   roletas: z.array(roletaSchema),
   capturas_recentes: z.array(capturaSchema),
   gerado_em: z.string(),
-});
+}).transform((carteira) => ({
+  ...carteira,
+  disponibilidade_captura: carteira.disponibilidade_captura ?? resolveCaptureAvailability({
+    perfil: carteira.perfil,
+    roletasPermitidas: carteira.roletas.length,
+    roletasAtivasDeCaptura: carteira.roletas.length,
+    oportunidadesDisponiveis: carteira.roletas.reduce((total, roleta) => total + roleta.disponiveis, 0),
+  }),
+}));
 
-export function getEmptyCarteira(nome = "Corretor"): CarteiraData {
+export function getEmptyCarteira(
+  nome = "Corretor",
+  perfil: CarteiraData["perfil"] = "corretor",
+  disponibilidadeCaptura: CarteiraData["disponibilidade_captura"] = "dados_indisponiveis",
+): CarteiraData {
   return {
     nome,
-    perfil: "corretor",
+    perfil,
     capturados: 0,
     limite: 6,
     estado_ciclo: "captacao_liberada",
+    disponibilidade_captura: disponibilidadeCaptura,
     roletas: [],
     capturas_recentes: [],
     gerado_em: new Date().toISOString(),
@@ -114,14 +130,21 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
     admin.from("usuarios").select("nome, perfil, ativo").eq("id", userId).single(),
     admin.from("bloqueios").select("id").eq("corretor_id", userId).is("liberado_em", null).limit(1),
     admin.from("roletas_corretor").select("roleta_id").eq("corretor_id", userId),
-    admin.from("roletas").select("id, nome, descricao, ativa").eq("ativa", true).order("nome"),
+    admin.from("roletas").select("id, nome, descricao, ativa, bitrix_funil_id, bitrix_category_id").order("nome"),
     oportunidadesPromise,
   ]);
 
-  if (usuarioResult.error || !usuarioResult.data?.ativo) {
+  if (
+    usuarioResult.error
+    || !usuarioResult.data?.ativo
+    || bloqueioResult.error
+    || atribuicoesResult.error
+    || roletasResult.error
+  ) {
     throw new Error("Não foi possível carregar a carteira do usuário.");
   }
 
+  const perfil = usuarioResult.data.perfil ?? "corretor";
   const limite = MAX_ACTIVE_LEADS;
   const bloqueado = Boolean(bloqueioResult.data?.length);
 
@@ -136,7 +159,11 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
   else if (capturados >= limite) estadoCiclo = "auditoria_pendente";
 
   const roletaIds = new Set((atribuicoesResult.data ?? []).map((item) => item.roleta_id));
-  const roletasAtivas = (roletasResult.data ?? []).filter((roleta) => roletaIds.has(roleta.id));
+  const roletasAtivasDeCaptura = (roletasResult.data ?? []).filter((roleta) => (
+    roletaIds.has(roleta.id)
+    && roleta.ativa
+    && isRoletaCaptura(roleta)
+  ));
   const oportunidades = oportunidadesResult;
   const roletaNomePorId = new Map((roletasResult.data ?? []).map((roleta) => [roleta.id, roleta.nome]));
 
@@ -148,6 +175,17 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
       (disponiveisPorRoleta.get(oportunidade.roleta_id) ?? 0) + 1,
     );
   }
+
+  const totalDisponiveis = roletasAtivasDeCaptura.reduce(
+    (total, roleta) => total + (disponiveisPorRoleta.get(roleta.id) ?? 0),
+    0,
+  );
+  const disponibilidadeCaptura = resolveCaptureAvailability({
+    perfil,
+    roletasPermitidas: roletaIds.size,
+    roletasAtivasDeCaptura: roletasAtivasDeCaptura.length,
+    oportunidadesDisponiveis: totalDisponiveis,
+  });
 
   const capturasRecentes = oportunidades
     .filter((oportunidade) => oportunidade.corretor_id === userId && oportunidade.captada_em)
@@ -166,11 +204,12 @@ async function loadCarteiraFromTables(userId: string): Promise<CarteiraData> {
 
   return carteiraSchema.parse({
     nome: usuarioResult.data.nome,
-    perfil: usuarioResult.data.perfil ?? "corretor",
+    perfil,
     capturados,
     limite,
     estado_ciclo: estadoCiclo,
-    roletas: roletasAtivas.map((roleta) => {
+    disponibilidade_captura: disponibilidadeCaptura,
+    roletas: roletasAtivasDeCaptura.map((roleta) => {
       const disponiveis = disponiveisPorRoleta.get(roleta.id) ?? 0;
       return {
         id: roleta.id,
@@ -213,8 +252,9 @@ export async function getCarteiraData(): Promise<CarteiraData> {
     return loadCarteiraFromTables(authUser.id);
   }
 
-  return carteiraSchema.parse({
-    ...getEmptyCarteira(profile.nome),
-    perfil: profile.perfil,
-  });
+  return getEmptyCarteira(
+    profile.nome,
+    profile.perfil,
+    profile.perfil === "corretor" ? "dados_indisponiveis" : "perfil_sem_captura",
+  );
 }

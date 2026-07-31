@@ -297,6 +297,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .broker-capture-panel {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
   padding: 18px 20px;
   border: 1px solid var(--line);
@@ -304,11 +305,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   background: var(--surface);
 }
 .broker-capture-panel.is-claiming { background: var(--primary-soft); }
+.broker-capture-panel.is-unavailable { background: color-mix(in oklab, var(--surface-strong) 45%, var(--surface)); }
+.broker-capture-action { min-width: 0; display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: 8px; }
 .broker-capture-panel .button { min-width: min(100%, 280px); }
+.broker-capture-unavailable { display: inline-flex; align-items: center; gap: 9px; color: var(--ink); font-size: 0.84rem; }
+.broker-capture-unavailable svg { color: var(--primary); }
+.broker-capture-hint { max-width: 68ch; margin: 0; color: var(--muted); font-size: 0.76rem; line-height: 1.45; }
+.broker-capture-retry { flex: 0 0 auto; }
 .broker-capturas-table .table-head,
 .broker-capturas-table .table-row {
-  grid-template-columns: minmax(220px, 1.6fr) 130px 110px 130px 88px;
+  grid-template-columns: minmax(190px, 1.35fr) minmax(145px, 1fr) 118px 108px 118px 82px;
 }
+.broker-capturas-table .table-row > [role="cell"]:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .roulette-row { min-height: 92px; display: grid; grid-template-columns: auto minmax(210px, 1fr) auto; align-items: center; gap: 18px; padding: 16px 4px; border-bottom: 1px solid var(--line); transition: background-color 180ms cubic-bezier(.16,1,.3,1); }
 .roulette-row.is-claiming { background: var(--primary-soft); }
 .roulette-signal { width: 43px; height: 43px; display: grid; place-items: center; border-radius: 12px; }
@@ -322,7 +330,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .available-count strong, .available-count span, .available-count-value { display: block; }
 .available-count strong, .available-count-value { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
 .available-count span { color: var(--muted); font-size: 0.67rem; }
-.data-table { width: 100%; overflow: hidden; border-top: 1px solid var(--line); }
+.data-table { width: 100%; overflow-x: auto; border-top: 1px solid var(--line); }
 .table-head, .table-row { display: grid; grid-template-columns: minmax(220px, 1.5fr) minmax(120px, 1fr) 130px 110px 130px 88px; align-items: center; gap: 16px; }
 .table-head { min-height: 44px; color: var(--muted); font-size: 0.7rem; font-weight: 650; }
 .table-row { min-height: 66px; border-top: 1px solid var(--line); font-size: 0.78rem; }
@@ -3023,4 +3031,139 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 @media (prefers-reduced-motion: reduce) {
   .results-metric, .results-table .table-row { transition: none; }
+}
+
+@media (max-width: 760px) {
+  .app-shell { padding-bottom: 76px; }
+  .mobile-nav { height: 68px; }
+  .mobile-nav.mobile-nav--1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+  .mobile-nav.mobile-nav--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mobile-nav.mobile-nav--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mobile-nav.mobile-nav--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .mobile-nav > a,
+  .mobile-nav-more-trigger {
+    min-width: 0;
+    min-height: 68px;
+    display: grid;
+    grid-template-rows: 20px auto;
+    align-content: center;
+    justify-items: center;
+    gap: 2px;
+    padding: 5px 4px;
+  }
+  .mobile-nav-more { position: relative; min-width: 0; }
+  .mobile-nav-more-trigger {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    cursor: pointer;
+  }
+  .mobile-nav > a.active,
+  .mobile-nav-more.active .mobile-nav-more-trigger { color: var(--primary); }
+  .mobile-nav .mobile-nav-label {
+    position: static;
+    display: block;
+    width: auto;
+    max-width: 100%;
+    min-width: 0;
+    height: auto;
+    overflow: hidden;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    color: currentColor;
+    font-size: .6rem;
+    font-weight: 650;
+    line-height: 1.1;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-nav .mobile-nav-count {
+    position: absolute;
+    top: 7px;
+    right: calc(50% - 19px);
+    min-width: 17px;
+    height: 17px;
+    display: grid;
+    place-items: center;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--danger);
+    color: white;
+    font-size: .6rem;
+  }
+  .mobile-nav-overflow {
+    position: absolute;
+    right: 8px;
+    bottom: calc(100% + 8px);
+    z-index: 1;
+    width: min(260px, calc(100vw - 32px));
+    display: grid;
+    gap: 2px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface-raised);
+    box-shadow: 0 4px 8px rgb(28 28 28 / .10);
+  }
+  .mobile-nav .mobile-nav-overflow a {
+    position: static;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px;
+    border-radius: 8px;
+    color: var(--ink);
+    font-size: .8rem;
+    font-weight: 650;
+  }
+  .mobile-nav .mobile-nav-overflow a.active { background: var(--primary-soft); color: var(--primary); }
+  .mobile-nav > a:focus-visible,
+  .mobile-nav-more-trigger:focus-visible,
+  .mobile-nav .mobile-nav-overflow a:focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: -3px;
+  }
+
+  .broker-capture-panel { align-items: stretch; }
+  .broker-capture-action { align-items: stretch; }
+  .broker-capture-panel .button { width: 100%; justify-content: center; }
+  .broker-capture-retry { width: 100%; justify-content: center; }
+  .broker-capturas-table { overflow: visible; }
+  .broker-capturas-table .table-head {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .broker-capturas-table .table-row {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 13px 16px;
+    padding: 16px 0;
+  }
+  .broker-capturas-table .table-row > [role="cell"] { min-width: 0; }
+  .broker-capturas-table .table-row > [role="cell"]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 5px;
+    color: var(--muted);
+    font-size: .6rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .broker-capturas-table .table-row > [role="cell"]:first-child,
+  .broker-capturas-table .table-row > [role="cell"]:nth-child(2) {
+    grid-column: 1 / -1;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
 }

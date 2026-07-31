@@ -7,6 +7,7 @@ import { hasBitrixEnv } from "@/lib/bitrix/client";
 import { loadAuthProfile } from "@/lib/auth/load-auth-profile";
 import { MAX_ACTIVE_LEADS } from "@/lib/capture-capacity";
 import { isOportunidadeDisponivel } from "@/lib/data/oportunidade-status";
+import { isRoletaCaptura } from "@/lib/data/roleta-captura";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasSupabaseSecretKey } from "@/lib/supabase/env";
@@ -16,26 +17,32 @@ const payloadSchema = z.object({
 });
 
 type ActionResult =
-  | { ok: true; titulo: string; bitrixDealId: string }
+  | { ok: true; titulo: string; bitrixDealId: string; roleta: string | null }
   | { ok: false; error: string; code?: string };
 
-function captureErrorMessage(code: string) {
+function captureErrorMessage(code: string, limite = MAX_ACTIVE_LEADS) {
   switch (code) {
     case "corretor_bloqueado":
       return "Sua captação está bloqueada. Aguarde a liberação da liderança.";
     case "limite_leads_ativos_atingido":
     case "limite_diario_atingido":
-      return "Você já possui 6 leads ativos. Novas vagas são liberadas pela auditoria da liderança.";
+      return `Você já possui ${limite} leads ativos. Novas vagas são liberadas pela auditoria da liderança.`;
     case "roleta_sem_oportunidades":
       return "Não há oportunidades disponíveis agora.";
     case "roleta_nao_autorizada":
       return "Você não tem permissão para captar nesta roleta.";
+    case "roleta_indisponivel":
+      return "Suas roletas permitidas não estão ativas para captação. Peça à liderança para revisar a configuração.";
     case "perfil_sem_permissao":
       return "Seu perfil não pode captar oportunidades.";
     case "bitrix_nao_vinculado":
       return "Seu usuário ainda não está vinculado ao Bitrix24. Peça à liderança para sincronizar o acesso.";
     case "bitrix_atribuicao_falhou":
       return "A oportunidade foi reservada, mas não foi possível atribuí-la a você no Bitrix24. Tente novamente.";
+    case "fila_indisponivel":
+      return "Não foi possível consultar a fila agora. Tente sincronizar ou tente novamente em instantes.";
+    case "captura_indisponivel":
+      return "Não foi possível concluir a captação. Atualize a carteira e tente novamente.";
     default:
       return "Não foi possível captar a oportunidade. Tente novamente.";
   }
@@ -157,7 +164,7 @@ export async function captarOportunidade(input?: unknown): Promise<ActionResult>
   const [
     { data: corretor },
     { data: bloqueio },
-    { data: autorizados },
+    autorizadosResult,
     { data: capturaAtual },
     capacidadeResult,
   ] = await Promise.all([
@@ -173,7 +180,11 @@ export async function captarOportunidade(input?: unknown): Promise<ActionResult>
       .is("auditoria_aprovada_em", null),
   ]);
 
-  const authorizedRoletaIds = (autorizados ?? []).map((item) => item.roleta_id);
+  if (autorizadosResult.error) {
+    return { ok: false, error: captureErrorMessage("fila_indisponivel"), code: "fila_indisponivel" };
+  }
+
+  const authorizedRoletaIds = (autorizadosResult.data ?? []).map((item) => item.roleta_id);
 
   if (!corretor?.bitrix_user_id) {
     return { ok: false, error: captureErrorMessage("bitrix_nao_vinculado"), code: "bitrix_nao_vinculado" };
@@ -183,26 +194,45 @@ export async function captarOportunidade(input?: unknown): Promise<ActionResult>
     return { ok: false, error: captureErrorMessage("corretor_bloqueado"), code: "corretor_bloqueado" };
   }
 
+  if (authorizedRoletaIds.length === 0) {
+    return { ok: false, error: captureErrorMessage("roleta_nao_autorizada"), code: "roleta_nao_autorizada" };
+  }
+
   if (roletaId && !authorizedRoletaIds.includes(roletaId)) {
     return { ok: false, error: captureErrorMessage("roleta_nao_autorizada"), code: "roleta_nao_autorizada" };
   }
-  if (!roletaId && authorizedRoletaIds.length === 0) {
-    return { ok: false, error: captureErrorMessage("roleta_nao_autorizada"), code: "roleta_nao_autorizada" };
+
+  const { data: roletasAtivas, error: roletasError } = await admin
+    .from("roletas")
+    .select("id, nome, bitrix_funil_id, bitrix_category_id")
+    .in("id", authorizedRoletaIds)
+    .eq("ativa", true);
+
+  if (roletasError) {
+    return { ok: false, error: captureErrorMessage("fila_indisponivel"), code: "fila_indisponivel" };
+  }
+
+  const roletasDeCaptura = (roletasAtivas ?? []).filter(isRoletaCaptura);
+  const roletasDeCapturaPorId = new Map(roletasDeCaptura.map((roleta) => [roleta.id, roleta]));
+  const roletaIdsDeCaptura = [...roletasDeCapturaPorId.keys()];
+
+  if (!roletaIdsDeCaptura.length || (roletaId && !roletasDeCapturaPorId.has(roletaId))) {
+    return { ok: false, error: captureErrorMessage("roleta_indisponivel"), code: "roleta_indisponivel" };
   }
 
   const capturados = capturaAtual?.quantidade_captada ?? 0;
   const limite = MAX_ACTIVE_LEADS;
   if ((capacidadeResult.count ?? 0) >= limite) {
-    return { ok: false, error: captureErrorMessage("limite_leads_ativos_atingido"), code: "limite_leads_ativos_atingido" };
+    return { ok: false, error: captureErrorMessage("limite_leads_ativos_atingido", limite), code: "limite_leads_ativos_atingido" };
   }
 
-  const roletaIdsParaBusca = roletaId ? [roletaId] : authorizedRoletaIds;
+  const roletaIdsParaBusca = roletaId ? [roletaId] : roletaIdsDeCaptura;
 
   let oportunidade: Awaited<ReturnType<typeof findProximaOportunidade>>;
   try {
     oportunidade = await findProximaOportunidade(admin, roletaIdsParaBusca);
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Não foi possível buscar oportunidades." };
+  } catch {
+    return { ok: false, error: captureErrorMessage("fila_indisponivel"), code: "fila_indisponivel" };
   }
 
   if (!oportunidade) {
@@ -231,9 +261,9 @@ export async function captarOportunidade(input?: unknown): Promise<ActionResult>
 
   if (updateError) {
     if (updateError.message.includes("limite_leads_ativos_atingido")) {
-      return { ok: false, error: captureErrorMessage("limite_leads_ativos_atingido"), code: "limite_leads_ativos_atingido" };
+      return { ok: false, error: captureErrorMessage("limite_leads_ativos_atingido", limite), code: "limite_leads_ativos_atingido" };
     }
-    return { ok: false, error: updateError.message };
+    return { ok: false, error: captureErrorMessage("captura_indisponivel"), code: "captura_indisponivel" };
   }
 
   if (capturaAtual) {
@@ -284,5 +314,6 @@ export async function captarOportunidade(input?: unknown): Promise<ActionResult>
     ok: true,
     titulo: String(oportunidade.titulo ?? "Oportunidade captada"),
     bitrixDealId: String(oportunidade.bitrix_deal_id ?? ""),
+    roleta: roletasDeCapturaPorId.get(oportunidade.roleta_id)?.nome ?? null,
   };
 }

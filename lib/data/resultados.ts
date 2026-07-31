@@ -156,7 +156,6 @@ function mapOpportunityToLead(
   const corretor = users.get(item.corretor_id!)!;
   const equipe = corretor.equipe_nome?.trim() || "Sem equipe";
   const snapshot = snapshots.get(item.bitrix_deal_id);
-  const stageId = stripStageSemanticSuffix(snapshot?.stageId ?? item.bitrix_stage_id);
   const stage = resolveStageName(stageNamesByCategory, snapshot, item.bitrix_stage_id, "Etapa não identificada");
   const captadaEm = item.captada_em ?? item.data_criacao_bitrix ?? item.ultima_atualizacao_bitrix ?? new Date().toISOString();
   return {
@@ -251,10 +250,6 @@ type UserRow = {
   bitrix_user_id: string | null;
 };
 
-function isOperationalCorretor(user: UserRow) {
-  return user.perfil === "corretor" && !/\bteste\b/i.test(user.nome);
-}
-
 async function resolveBrokerPhotos(users: Iterable<UserRow>) {
   const photosByUserId = new Map<string, string | null>();
   const missingBitrixIds: string[] = [];
@@ -340,7 +335,7 @@ export async function getResultadosData(): Promise<ResultadosData> {
 
   const users = new Map(
     (usersResult.data ?? [])
-      .filter((user) => inScope(viewer, user) && isOperationalCorretor(user))
+      .filter((user) => inScope(viewer, user))
       .map((user) => [user.id, user]),
   );
 

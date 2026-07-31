@@ -47,6 +47,42 @@ const cycleMeta: Record<
   bloqueado: { label: "Captação bloqueada", icon: LockKeyhole, tone: "danger" },
 };
 
+const captureAvailabilityMeta: Record<
+  CarteiraData["disponibilidade_captura"],
+  { title: string; description: string; icon: typeof Inbox }
+> = {
+  disponivel: {
+    title: "Captação disponível",
+    description: "Sua próxima oportunidade disponível será atribuída a você.",
+    icon: Inbox,
+  },
+  perfil_sem_captura: {
+    title: "Carteira em modo de consulta",
+    description: "Seu perfil acompanha esta carteira, mas não pode captar oportunidades.",
+    icon: LockKeyhole,
+  },
+  sem_permissao_roleta: {
+    title: "Sem acesso a uma roleta de captação",
+    description: "Peça à liderança para revisar suas permissões de roleta.",
+    icon: LockKeyhole,
+  },
+  sem_roleta_ativa: {
+    title: "Roleta de captação indisponível",
+    description: "Suas permissões não apontam para uma roleta ativa de captação. Peça à liderança para revisar a configuração.",
+    icon: LockKeyhole,
+  },
+  sem_oportunidades: {
+    title: "Fila sem oportunidades",
+    description: "Não há oportunidades nas suas roletas agora. Sincronize os leads ou tente novamente mais tarde.",
+    icon: Inbox,
+  },
+  dados_indisponiveis: {
+    title: "Não foi possível confirmar sua disponibilidade",
+    description: "Atualize a carteira para tentar novamente. Se o problema continuar, fale com a liderança.",
+    icon: RefreshCw,
+  },
+};
+
 function dealUrl(portalBase: string, dealId: string) {
   const id = dealId.trim();
   if (!portalBase || !id) return null;
@@ -63,15 +99,15 @@ function captureGateLabel(estadoCiclo: CarteiraData["estado_ciclo"], capturados:
   }
   if (estadoCiclo === "auditoria_pendente") {
     return {
-      label: "6 leads ativos",
-      title: "Capacidade completa. A liderança libera uma vaga a cada lead aprovado.",
+      label: "Auditoria pendente",
+      title: "Existe uma auditoria pendente. A liderança libera uma nova vaga após a aprovação.",
       icon: <Clock3 size={16} aria-hidden />,
     };
   }
   if (capturados >= limite) {
     return {
       label: "Limite atingido",
-      title: "Capacidade de 6 leads ativos atingida. Aguarde a auditoria.",
+      title: `Capacidade de ${limite} leads ativos atingida. Aguarde a auditoria.`,
       icon: <LockKeyhole size={16} aria-hidden />,
     };
   }
@@ -87,6 +123,7 @@ export function BrokerPanel({
 }) {
   const router = useRouter();
   const cycleStatusId = useId();
+  const captureEligibilityId = useId();
   const [capturing, setCapturing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [isRefreshing, startRefresh] = useTransition();
@@ -102,13 +139,22 @@ export function BrokerPanel({
   const prevCapturadosRef = useRef(data.capturados);
   const prevEstadoRef = useRef(data.estado_ciclo);
 
-  const { capturados, limite, estado_ciclo: estadoCiclo, roletas, capturas_recentes: capturasRecentes } = data;
+  const {
+    capturados,
+    limite,
+    estado_ciclo: estadoCiclo,
+    disponibilidade_captura: disponibilidadeCaptura,
+    roletas,
+    capturas_recentes: capturasRecentes,
+  } = data;
   const totalDisponiveis = roletas.reduce((sum, item) => sum + item.disponiveis, 0);
   const temDisponiveis = totalDisponiveis > 0;
   const restante = Math.max(0, limite - capturados);
   const cicloLiberado = estadoCiclo === "captacao_liberada";
   const limiteAtivoAtingido = capturados >= limite;
-  const captacaoTravada = !cicloLiberado || limiteAtivoAtingido;
+  const disponibilidade = captureAvailabilityMeta[disponibilidadeCaptura];
+  const capturaIndisponivel = disponibilidadeCaptura !== "disponivel";
+  const captacaoTravada = !cicloLiberado || limiteAtivoAtingido || capturaIndisponivel;
   const gate = captureGateLabel(estadoCiclo, capturados, limite);
   const progress = limite > 0 ? Math.min(100, (capturados / limite) * 100) : 0;
   const CycleIcon = cycleMeta[estadoCiclo].icon;
@@ -116,10 +162,15 @@ export function BrokerPanel({
     estadoCiclo === "bloqueado"
       ? "Captação bloqueada. Aguarde a liberação da liderança."
       : estadoCiclo === "auditoria_pendente"
-        ? "Capacidade completa. A liderança libera uma vaga a cada lead aprovado."
+        ? "A auditoria da liderança precisa ser concluída antes de uma nova captura."
         : restante > 0
           ? `Você ainda pode captar ${restante} oportunidade${restante === 1 ? "" : "s"}.`
           : "Capacidade completa. Cada lead aprovado pela liderança libera uma nova vaga.";
+  const captureEligibility = gate?.title ?? disponibilidade.description;
+  const captureHeadingCopy = disponibilidadeCaptura === "disponivel" && temDisponiveis
+    ? `${totalDisponiveis} oportunidade${totalDisponiveis === 1 ? "" : "s"} na fila. A próxima disponível será atribuída a você.`
+    : disponibilidade.description;
+  const AvailabilityIcon = disponibilidade.icon;
 
   const isPageBusy = syncing || capturing || isRefreshing;
   const displayedSyncedAt = Date.parse(lastSyncedAt) >= Date.parse(data.gerado_em) ? lastSyncedAt : data.gerado_em;
@@ -200,29 +251,34 @@ export function BrokerPanel({
   }, [syncLeads]);
 
   async function capture() {
+    if (capturing) return;
     setCapturing(true);
     setMessage("");
     setMessageLink(null);
     setError("");
 
-    const result = await captarOportunidade();
+    try {
+      const result = await captarOportunidade();
 
-    setCapturing(false);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
 
-    if (!result.ok) {
-      setError(result.error);
-      return;
+      const link = dealUrl(bitrixPortalBase, result.bitrixDealId);
+      setMessage(
+        result.titulo
+          ? `“${result.titulo}” captada${result.roleta ? ` da roleta ${result.roleta}` : ""}. Continue o atendimento no Bitrix24.`
+          : "Oportunidade captada. Continue o atendimento no Bitrix24.",
+      );
+      setMessageLink(link);
+      if (result.bitrixDealId) setHighlightDealId(result.bitrixDealId);
+      refreshData();
+    } catch {
+      setError("Não foi possível concluir a captação. Atualize a carteira e tente novamente.");
+    } finally {
+      setCapturing(false);
     }
-
-    const link = dealUrl(bitrixPortalBase, result.bitrixDealId);
-    setMessage(
-      result.titulo
-        ? `“${result.titulo}” captada. Continue o atendimento no Bitrix24.`
-        : "Oportunidade captada. Continue o atendimento no Bitrix24.",
-    );
-    setMessageLink(link);
-    if (result.bitrixDealId) setHighlightDealId(result.bitrixDealId);
-    refreshData();
   }
 
   function renderCaptureLabel(): ReactNode {
@@ -242,19 +298,28 @@ export function BrokerPanel({
         </>
       );
     }
+    if (disponibilidadeCaptura === "sem_oportunidades") {
+      return (
+        <>
+          <Inbox size={16} aria-hidden />
+          Fila vazia
+        </>
+      );
+    }
+    if (disponibilidadeCaptura === "dados_indisponiveis") {
+      return (
+        <>
+          <RefreshCw size={16} aria-hidden />
+          Indisponível agora
+        </>
+      );
+    }
     return (
       <>
         Captar oportunidade
         <ArrowUpRight size={16} aria-hidden />
       </>
     );
-  }
-
-  function captureButtonTitle() {
-    if (gate) return gate.title;
-    if (syncing) return "Aguarde a sincronização terminar.";
-    if (!temDisponiveis) return "Sem oportunidades na fila. Tente sincronizar ou aguarde novos leads.";
-    return undefined;
   }
 
   return (
@@ -301,6 +366,9 @@ export function BrokerPanel({
         <div
           id={cycleStatusId}
           className={`cycle-state cycle-state--${cycleMeta[estadoCiclo].tone}${cyclePulse ? " is-cycle-shift" : ""}`}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
         >
           <span className="state-icon" key={estadoCiclo} aria-hidden>
             <CycleIcon size={20} />
@@ -349,11 +417,7 @@ export function BrokerPanel({
         <div className="section-heading">
           <div>
             <h2 id="broker-captura-heading">Captar oportunidade</h2>
-            <p>
-              {temDisponiveis
-                ? `${totalDisponiveis} oportunidade${totalDisponiveis === 1 ? "" : "s"} na fila. A próxima disponível será atribuída a você.`
-                : "Sem oportunidades na fila no momento."}
-            </p>
+            <p>{captureHeadingCopy}</p>
           </div>
           <div className="sync-control">
             <button
@@ -372,8 +436,9 @@ export function BrokerPanel({
           </div>
         </div>
 
-        {roletas.length ? (
-          <div className={`broker-capture-panel${capturing ? " is-claiming" : ""}`}>
+        <div className={`broker-capture-panel${capturing ? " is-claiming" : ""}${capturaIndisponivel ? " is-unavailable" : ""}`}>
+          <div className="broker-capture-action">
+            {roletas.length && disponibilidadeCaptura !== "perfil_sem_captura" ? (
             <button
               type="button"
               className={`button ${
@@ -387,20 +452,39 @@ export function BrokerPanel({
                   : "button-secondary"
               }`}
               disabled={captacaoTravada || capturing || syncing || isRefreshing || !temDisponiveis}
-              title={captureButtonTitle()}
-              aria-describedby={gate ? cycleStatusId : undefined}
+              aria-describedby={gate ? `${cycleStatusId} ${captureEligibilityId}` : captureEligibilityId}
               onClick={() => void capture()}
             >
               {renderCaptureLabel()}
             </button>
+            ) : (
+              <div className="broker-capture-unavailable">
+                <AvailabilityIcon size={20} aria-hidden />
+                <strong>{disponibilidade.title}</strong>
+              </div>
+            )}
+            <p
+              id={captureEligibilityId}
+              className="broker-capture-hint"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {captureEligibility}
+            </p>
           </div>
-        ) : (
-          <div className="empty-state">
-            <Inbox size={24} aria-hidden />
-            <h3>Captação ainda não liberada</h3>
-            <p>Quando a liderança liberar captação para você, o botão aparecerá aqui.</p>
-          </div>
-        )}
+          {disponibilidadeCaptura === "dados_indisponiveis" ? (
+            <button
+              type="button"
+              className="button button-quiet broker-capture-retry"
+              disabled={isPageBusy}
+              onClick={refreshData}
+            >
+              <RefreshCw size={15} aria-hidden />
+              Atualizar carteira
+            </button>
+          ) : null}
+        </div>
       </section>
 
       <section className="section-block" aria-labelledby="broker-capturas-heading">
@@ -415,6 +499,7 @@ export function BrokerPanel({
           <div className="data-table broker-capturas-table" role="table" aria-label="Capturas recentes">
             <div className="table-head" role="row">
               <span role="columnheader">Oportunidade</span>
+              <span role="columnheader">Roleta de origem</span>
               <span role="columnheader">Captada em</span>
               <span role="columnheader">Valor estimado</span>
               <span role="columnheader">Status</span>
@@ -429,8 +514,9 @@ export function BrokerPanel({
                     <strong>{item.titulo}</strong>
                     <small>#{item.bitrix_deal_id}</small>
                   </span>
+                  <span role="cell" data-label="Roleta de origem">{item.roleta}</span>
                   <span role="cell" data-label="Captada em">{formatDate(item.captada_em)}</span>
-                  <span role="cell" data-label="Valor">{formatCurrency(item.valor)}</span>
+                  <span role="cell" data-label="Valor estimado">{formatCurrency(item.valor)}</span>
                   <span role="cell" data-label="Status">
                     <StatusBadge tone={statusTones[item.status]}>{statusLabels[item.status]}</StatusBadge>
                   </span>

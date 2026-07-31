@@ -1,3 +1,5 @@
+import type { DisponibilidadeCaptura } from "@/lib/capture-availability";
+
 export type CarteiraRoleta = {
   id: string;
   nome: string;
@@ -23,6 +25,7 @@ export type CarteiraData = {
   capturados: number;
   limite: number;
   estado_ciclo: "captacao_liberada" | "auditoria_pendente" | "bloqueado";
+  disponibilidade_captura: DisponibilidadeCaptura;
   roletas: CarteiraRoleta[];
   capturas_recentes: CarteiraCaptura[];
   gerado_em: string;

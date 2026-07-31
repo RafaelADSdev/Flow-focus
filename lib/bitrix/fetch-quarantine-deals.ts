@@ -39,7 +39,7 @@ const SELECT_FIELDS = [
   DEAL_STATUS_FIELD,
 ];
 
-const MAX_PAGES = 60;
+const MAX_PAGES = 200;
 const PAGE_SIZE = 50;
 
 function toQuarantineDeal(deal: RawDeal): QuarantineDeal | null {
@@ -57,7 +57,7 @@ function toQuarantineDeal(deal: RawDeal): QuarantineDeal | null {
   };
 }
 
-async function listOpenDeals(categoryId: string, statusFilter: string | null) {
+async function listQuarantineDeals(categoryId: string) {
   const output: QuarantineDeal[] = [];
   let start = 0;
 
@@ -65,10 +65,10 @@ async function listOpenDeals(categoryId: string, statusFilter: string | null) {
     const query: Record<string, string> = {
       "filter[=CATEGORY_ID]": categoryId,
       "filter[CLOSED]": "N",
+      [`filter[=${DEAL_STATUS_FIELD}]`]: process.env.BITRIX24_QUARANTINE_STATUS_VALUE ?? "4128",
       start: String(start),
       "order[ID]": "ASC",
     };
-    if (statusFilter) query[`filter[=${DEAL_STATUS_FIELD}]`] = statusFilter;
     SELECT_FIELDS.forEach((field, index) => { query[`select[${index}]`] = field; });
 
     const response = await bitrixCallPage<RawDeal[]>("crm.deal.list", new URLSearchParams(query), 30_000);
@@ -80,19 +80,19 @@ async function listOpenDeals(categoryId: string, statusFilter: string | null) {
     if (typeof response.next !== "number") break;
     start = response.next;
     if (response.result.length < PAGE_SIZE) break;
+    if (page === MAX_PAGES - 1) {
+      throw new Error("A consulta de quarentena excedeu o limite de paginação do Bitrix24.");
+    }
   }
 
   return output;
 }
 
-/**
- * O filtro por valor do campo de status pode falhar quando o portal usa outro ID de lista,
- * então a varredura completa dos negócios abertos garante o mesmo número exibido em Equipes.
- */
+/** Busca somente os negócios abertos cujo campo de status está em quarentena. */
 export async function fetchQuarantineDeals(categoryId: string): Promise<QuarantineDeal[]> {
   if (!hasBitrixEnv() || !categoryId) return [];
 
   return cached(`resultados:quarentena:${categoryId}`, 60_000, async () => {
-    return listOpenDeals(categoryId, null).catch(() => []);
+    return listQuarantineDeals(categoryId);
   });
 }
