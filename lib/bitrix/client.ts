@@ -33,8 +33,8 @@ async function fetchBitrixPage<T>(url: URL, timeoutMs: number) {
       signal: AbortSignal.timeout(timeoutMs),
     });
 
-    if (response.status === 429 && attempt < maxAttempts) {
-      await sleep(1_500 * attempt);
+    if ((response.status === 429 || response.status === 503 || response.status === 502) && attempt < maxAttempts) {
+      await sleep((response.status === 429 ? 1_500 : 2_000) * attempt);
       continue;
     }
 
@@ -50,7 +50,7 @@ async function fetchBitrixPage<T>(url: URL, timeoutMs: number) {
     return { result: body.result, next: body.next, total: body.total };
   }
 
-  throw new Error("Bitrix respondeu HTTP 429");
+  throw new Error("Bitrix indisponível após várias tentativas.");
 }
 
 export async function bitrixCall<T>(method: string, params?: URLSearchParams) {

@@ -9,12 +9,24 @@ async function getAuthorizedUser() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   const user = data.user;
-  if (!user) return { supabase, user: null, error: "Faça login novamente para consultar a equipe." } as const;
+  if (!user) {
+    return {
+      supabase,
+      user: null,
+      isAdmin: false,
+      error: "Faça login novamente para consultar a equipe.",
+    } as const;
+  }
   const profile = await loadAuthProfile(user);
   if (!profile?.paginasAcesso.includes("/equipe")) {
-    return { supabase, user: null, error: "Seu perfil não possui acesso à tela Equipe." } as const;
+    return {
+      supabase,
+      user: null,
+      isAdmin: false,
+      error: "Seu perfil não possui acesso à tela Equipe.",
+    } as const;
   }
-  return { supabase, user, error: null } as const;
+  return { supabase, user, isAdmin: profile.perfil === "admin", error: null } as const;
 }
 
 export async function loadTeamPipeline(month: string | null, fresh = false): Promise<TeamPipeline> {
@@ -27,7 +39,7 @@ export async function loadTeamPipeline(month: string | null, fresh = false): Pro
       updatedAt: new Date().toISOString(),
     };
   }
-  return getTeamPipelineForEmail(auth.user.email ?? "", month, fresh);
+  return getTeamPipelineForEmail(auth.user.email ?? "", month, fresh, { isAdmin: auth.isAdmin });
 }
 
 export async function loadExpiringLeads(
@@ -39,7 +51,7 @@ export async function loadExpiringLeads(
   if (!auth.user) {
     return { ok: false, error: auth.error, brokerId, items: [], updatedAt: new Date().toISOString() };
   }
-  return getExpiringLeadsForEmail(auth.user.email ?? "", brokerId, mode, fresh);
+  return getExpiringLeadsForEmail(auth.user.email ?? "", brokerId, mode, fresh, { isAdmin: auth.isAdmin });
 }
 
 export async function loadBrokerExemptions(): Promise<{ ok: boolean; items: BrokerExemption[] }> {

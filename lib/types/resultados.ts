@@ -18,6 +18,7 @@ export type ResultadoCapturaEquipe = {
   equipeId: string;
   equipe: string;
   total: number;
+  quarentena: number;
 };
 
 export type ResultadoTopCorretor = {
@@ -25,6 +26,7 @@ export type ResultadoTopCorretor = {
   corretor: string;
   equipe: string;
   total: number;
+  fotoUrl: string | null;
 };
 
 export type ResultadosData = {

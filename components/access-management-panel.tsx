@@ -59,9 +59,13 @@ export function AccessManagementPanel({
   );
 
   const needsTeam = form.perfil === "corretor" || form.perfil === "lider";
-  const visiblePages = appPageOptions.filter((page) => (
-    !("adminOnly" in page) || !page.adminOnly || form.perfil === "admin"
-  ));
+  const visiblePages = appPageOptions.filter((page) => {
+    if ("adminOnly" in page && page.adminOnly && form.perfil !== "admin") return false;
+    if ("diretoriaOnly" in page && page.diretoriaOnly && form.perfil !== "admin" && form.perfil !== "diretora") {
+      return false;
+    }
+    return true;
+  });
 
   function updateField<K extends keyof NovoAcessoInput>(key: K, value: NovoAcessoInput[K]) {
     setSaved(false);
@@ -299,7 +303,7 @@ export function AccessManagementPanel({
           <fieldset className="field access-choice-fieldset">
             <legend>Páginas liberadas</legend>
             <p className="field-hint access-pages-hint">
-              Minha carteira fica sempre liberada. Ao mudar a visão, as demais páginas voltam ao padrão: corretor só carteira; líder e diretora veem Roletas, Equipe e Auditorias; Configurações só admin.
+              Minha carteira fica sempre liberada. Ao mudar a visão, as demais páginas voltam ao padrão: corretor só carteira; líder vê Roletas, Equipe e Auditorias; diretora e admin também veem Resultados; Configurações só admin.
             </p>
             <div className="access-choice-group">
               {visiblePages.map((page) => {

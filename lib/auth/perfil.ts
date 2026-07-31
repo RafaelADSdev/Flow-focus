@@ -18,3 +18,7 @@ export function mapPerfil(value: string | null | undefined): PerfilUsuario {
 export function canManageOperacao(perfil: PerfilUsuario | null) {
   return perfil === "lider" || perfil === "diretora" || perfil === "admin";
 }
+
+export function canViewResultados(perfil: PerfilUsuario | null) {
+  return perfil === "admin" || perfil === "diretora";
+}

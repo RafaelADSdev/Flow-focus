@@ -96,15 +96,17 @@ export function ResultsLeadsDialog({
 
   if (!bucket) return null;
 
+  const summary = bucket === "quarentena"
+    ? `${filtered.length} lead${filtered.length === 1 ? "" : "s"} com status EM QUARENTENA no Comercial Geral (Bitrix24).`
+    : `${filtered.length} lead${filtered.length === 1 ? "" : "s"} capturado${filtered.length === 1 ? "" : "s"} pela Minha carteira neste recorte.`;
+
   return (
     <div className="export-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div ref={dialogRef} className="export-dialog results-dialog" role="dialog" aria-modal="true" aria-labelledby="results-dialog-title">
         <header>
           <div>
             <h2 id="results-dialog-title">{label}</h2>
-            <p className="results-dialog-summary">
-              {filtered.length} lead{filtered.length === 1 ? "" : "s"} capturado{filtered.length === 1 ? "" : "s"} pelo Flow Focus neste recorte.
-            </p>
+            <p className="results-dialog-summary">{summary}</p>
           </div>
           <button className="icon-button" data-close type="button" onClick={onClose} aria-label="Fechar">
             <X size={20} />
@@ -123,30 +125,32 @@ export function ResultsLeadsDialog({
           </label>
 
           {filtered.length ? (
-            <div className="data-table results-table" role="table" aria-label={`Leads: ${label}`} aria-busy={isRefreshing}>
-              <div className="table-head" role="row">
-                <span role="columnheader">Cliente</span>
-                <span role="columnheader">Corretor</span>
-                <span role="columnheader">Captação</span>
-                <span role="columnheader">Etapa atual</span>
-                <span role="columnheader">Última atualização</span>
-                <span role="columnheader">Situação</span>
-                <span role="columnheader">Bitrix24</span>
+            <div className="results-table-scroll">
+              <div className="data-table results-table" role="table" aria-label={`Leads: ${label}`} aria-busy={isRefreshing}>
+                <div className="table-head" role="row">
+                  <span role="columnheader">Cliente</span>
+                  <span role="columnheader">Corretor</span>
+                  <span role="columnheader">Captação</span>
+                  <span role="columnheader">Etapa atual</span>
+                  <span role="columnheader">Última atualização</span>
+                  <span role="columnheader">Situação</span>
+                  <span role="columnheader">Bitrix24</span>
+                </div>
+                {filtered.map((lead) => {
+                  const link = dealUrl(bitrixPortalBase, lead.bitrixDealId);
+                  return (
+                    <div className="table-row" role="row" key={lead.id}>
+                      <span role="cell" data-label="Cliente"><strong>{lead.cliente}</strong><small>#{lead.bitrixDealId}</small></span>
+                      <span role="cell" data-label="Corretor">{lead.corretor}</span>
+                      <span role="cell" data-label="Captação">{formatDate(lead.captadaEm)}</span>
+                      <span role="cell" data-label="Etapa atual">{lead.etapaAtual}</span>
+                      <span role="cell" data-label="Última atualização">{lead.ultimaAtualizacao ? formatDate(lead.ultimaAtualizacao) : "Sem atualização"}</span>
+                      <span role="cell" data-label="Situação"><StatusBadge tone={bucketTone[lead.bucket]}>{lead.situacao}</StatusBadge></span>
+                      <span role="cell" data-label="Bitrix24">{link ? <a className="table-link" href={link} target="_blank" rel="noreferrer">Abrir<ExternalLink size={13} /></a> : "—"}</span>
+                    </div>
+                  );
+                })}
               </div>
-              {filtered.map((lead) => {
-                const link = dealUrl(bitrixPortalBase, lead.bitrixDealId);
-                return (
-                  <div className="table-row" role="row" key={lead.id}>
-                    <span role="cell" data-label="Cliente"><strong>{lead.cliente}</strong><small>#{lead.bitrixDealId}</small></span>
-                    <span role="cell" data-label="Corretor">{lead.corretor}</span>
-                    <span role="cell" data-label="Captação">{formatDate(lead.captadaEm)}</span>
-                    <span role="cell" data-label="Etapa atual">{lead.etapaAtual}</span>
-                    <span role="cell" data-label="Última atualização">{lead.ultimaAtualizacao ? formatDate(lead.ultimaAtualizacao) : "Sem atualização"}</span>
-                    <span role="cell" data-label="Situação"><StatusBadge tone={bucketTone[lead.bucket]}>{lead.situacao}</StatusBadge></span>
-                    <span role="cell" data-label="Bitrix24">{link ? <a className="table-link" href={link} target="_blank" rel="noreferrer">Abrir<ExternalLink size={13} /></a> : "—"}</span>
-                  </div>
-                );
-              })}
             </div>
           ) : (
             <div className="empty-state export-dialog-empty">

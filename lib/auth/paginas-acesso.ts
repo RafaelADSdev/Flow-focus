@@ -6,7 +6,7 @@ export const appPageOptions = [
   { href: "/roletas", label: "Roletas" },
   { href: "/equipe", label: "Equipe" },
   { href: "/auditorias", label: "Auditorias" },
-  { href: "/resultados", label: "Resultados" },
+  { href: "/resultados", label: "Resultados", diretoriaOnly: true },
   { href: "/configuracoes", label: "Configurações", adminOnly: true },
 ] as const;
 
@@ -25,8 +25,9 @@ export const paginaAcessoValues = appPageOptions.map((page) => page.href) as [
 export function defaultPaginasForPerfil(perfil: PerfilUsuario): VisiblePaginaAcesso[] {
   switch (perfil) {
     case "corretor":
-      return ["/corretor", "/resultados"];
+      return ["/corretor"];
     case "lider":
+      return ["/corretor", "/roletas", "/equipe", "/auditorias"];
     case "diretora":
       return ["/corretor", "/roletas", "/equipe", "/auditorias", "/resultados"];
     case "admin":
@@ -34,6 +35,18 @@ export function defaultPaginasForPerfil(perfil: PerfilUsuario): VisiblePaginaAce
     default:
       return ["/corretor"];
   }
+}
+
+function filterPaginasByPerfil(perfil: PerfilUsuario, paginas: VisiblePaginaAcesso[]): VisiblePaginaAcesso[] {
+  let filtered = perfil === "admin"
+    ? paginas
+    : paginas.filter((page) => page !== "/configuracoes");
+
+  if (perfil !== "admin" && perfil !== "diretora") {
+    filtered = filtered.filter((page) => page !== "/resultados");
+  }
+
+  return filtered;
 }
 
 function extractHiddenPaginas(paginas: readonly string[] | null | undefined): HiddenPaginaAcesso[] {
@@ -58,9 +71,7 @@ export function normalizePaginasAcesso(
     .map((page) => page.trim())
     .filter((page): page is VisiblePaginaAcesso => allowed.has(page));
 
-  const allowedForProfile = perfil === "admin"
-    ? cleaned
-    : cleaned.filter((page) => page !== "/configuracoes");
+  const allowedForProfile = filterPaginasByPerfil(perfil, cleaned);
 
   if (!allowedForProfile.length) {
     return defaultPaginasForPerfil(perfil);

@@ -91,7 +91,8 @@ describe("schemas compartilhados", () => {
   });
 
   it("não troca carteira vazia do corretor por outra página", () => {
-    expect(normalizePaginasAcesso("corretor", [])).toEqual(["/corretor", "/resultados"]);
-    expect(normalizePaginasAcesso("corretor", null)).toEqual(["/corretor", "/resultados"]);
+    expect(normalizePaginasAcesso("corretor", [])).toEqual(["/corretor"]);
+    expect(normalizePaginasAcesso("corretor", null)).toEqual(["/corretor"]);
+    expect(normalizePaginasAcesso("lider", ["/resultados", "/equipe"])).toEqual(["/corretor", "/equipe"]);
   });
 });

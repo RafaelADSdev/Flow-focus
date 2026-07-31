@@ -212,7 +212,7 @@ async function runSyncComercialGeralDeals(): Promise<ComercialGeralSyncSummary> 
       const corretorId = existing?.corretor_id ?? mappedCorretor;
       const value = rouletteValue(deal, config.rouletteField);
       const dateCreate = String(deal.DATE_CREATE ?? "") || null;
-      const captadaEm = existing?.captada_em ?? (corretorId && dateCreate ? dateCreate : null);
+      const captadaEm = existing?.captada_em ?? null;
       if (corretorId) comCorretor += 1;
 
       return {

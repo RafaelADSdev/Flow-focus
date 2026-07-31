@@ -109,7 +109,7 @@ export function ResultsPanel({ data, bitrixPortalBase = "" }: { data: Resultados
           </button>
           <span className="sync-label">Atualizado {formatDate(displayedSyncedAt)}</span>
         </div>
-        <p className="results-sync-note">Somente leads capturados pelas roletas do Flow Focus.</p>
+        <p className="results-sync-note">Capturas e gráficos vêm da Minha carteira. Quarentena vem do Comercial Geral no Bitrix24.</p>
       </div>
 
       {error ? <p className="form-error" role="alert">{error}</p> : null}
@@ -118,6 +118,7 @@ export function ResultsPanel({ data, bitrixPortalBase = "" }: { data: Resultados
         capturasPorEquipe={data.capturasPorEquipe}
         topCorretores={data.topCorretores}
         totalCapturados={data.indicadores.total}
+        totalQuarentena={data.indicadores.quarentena}
       />
 
       <ResultsLeadsDialog

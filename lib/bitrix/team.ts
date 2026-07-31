@@ -289,17 +289,48 @@ async function listDeals(
   });
 }
 
+function focusRootIds(allDepartments: readonly Department[]) {
+  const focus = allDepartments.find((department) => department.name.trim().toUpperCase() === "FOCUS");
+  if (focus) return [focus.id];
+  const directorateId = Number(process.env.BITRIX24_DIRECTORATE_DEPARTMENT_ID ?? "442");
+  if (allDepartments.some((department) => department.id === directorateId)) return [directorateId];
+  throw new Error("Não foi possível identificar a raiz Focus no Bitrix24.");
+}
+
+function departmentsToTargets(allDepartments: readonly Department[], allowedIds: ReadonlySet<number>) {
+  const byId = new Map(allDepartments.map((department) => [department.id, department]));
+  return [...allowedIds]
+    .map((id) => byId.get(id))
+    .filter((department): department is Department => Boolean(department))
+    .filter((department) => department.name.trim().toUpperCase() !== "FOCUS")
+    .map(({ id, name }) => ({ id, name }));
+}
+
+function leafDepartmentIds(allDepartments: readonly Department[], allowedIds: ReadonlySet<number>) {
+  const parentsInScope = new Set<number>();
+  for (const department of allDepartments) {
+    if (department.parent != null && allowedIds.has(department.id)) {
+      parentsInScope.add(department.parent);
+    }
+  }
+  return new Set([...allowedIds].filter((id) => !parentsInScope.has(id)));
+}
+
+function scopeForAdmin(allDepartments: readonly Department[]) {
+  const focusTree = descendantsOf(allDepartments, focusRootIds(allDepartments));
+  const teamIds = leafDepartmentIds(allDepartments, focusTree);
+  const targets = departmentsToTargets(allDepartments, teamIds);
+  if (!targets.length) throw new Error("Nenhum departamento acessível foi encontrado no Bitrix24.");
+  return { targets, scopeLabel: "Focus · Todas as equipes" };
+}
+
 function scopeForUser(user: RawBitrixUser, allDepartments: readonly Department[]) {
   const ownIds = (user.UF_DEPARTMENT ?? []).map(Number);
   if (!ownIds.length) throw new Error("Seu usuário do Bitrix24 não está vinculado a um departamento.");
   const broadScope = /superintend|diretor/i.test(user.WORK_POSITION ?? "");
   const allowedIds = broadScope ? descendantsOf(allDepartments, ownIds) : new Set(ownIds);
   const byId = new Map(allDepartments.map((department) => [department.id, department]));
-  const targets = [...allowedIds]
-    .map((id) => byId.get(id))
-    .filter((department): department is Department => Boolean(department))
-    .filter((department) => department.name.trim().toUpperCase() !== "FOCUS")
-    .map(({ id, name }) => ({ id, name }));
+  const targets = departmentsToTargets(allDepartments, allowedIds);
 
   const callerName = `${user.NAME ?? ""} ${user.LAST_NAME ?? ""}`.toLowerCase();
   const restricted = callerName.includes("ismênia") || callerName.includes("ismenia")
@@ -308,6 +339,10 @@ function scopeForUser(user: RawBitrixUser, allDepartments: readonly Department[]
   const scopeLabel = ownIds.map((id) => byId.get(id)?.name).filter(Boolean).join(" · ") || "Equipe";
   if (!restricted.length) throw new Error("Nenhum departamento acessível foi encontrado no Bitrix24.");
   return { targets: restricted, scopeLabel };
+}
+
+function resolveScope(user: RawBitrixUser, allDepartments: readonly Department[], isAdmin: boolean) {
+  return isAdmin ? scopeForAdmin(allDepartments) : scopeForUser(user, allDepartments);
 }
 
 async function buildTeamPipeline(
@@ -324,7 +359,7 @@ async function buildTeamPipeline(
   const brokers = members.filter((member) => !isLeaderish(member.workPosition));
   const lostStages = new Set(stages.filter((stage) => /perdid|prazo/i.test(stage.name) || /LOSE/i.test(stage.id)).map((stage) => stage.id));
   const stageNames = new Map(stages.map((stage) => [stage.id, stage.name]));
-  const results = await mapLimit(brokers, 6, async (user) => {
+  const results = await mapLimit(brokers, brokers.length > 20 ? 3 : 6, async (user) => {
     const [openDeals, closedDeals] = await Promise.all([
       listDeals(user.ID, pipeline.id, { closed: false, month, fresh }).catch(() => []),
       listDeals(user.ID, pipeline.id, { closed: true, month, fresh }).catch(() => []),
@@ -409,12 +444,17 @@ async function buildTeamPipeline(
   };
 }
 
-export async function getTeamPipelineForEmail(email: string, month: string | null, fresh = false): Promise<TeamPipeline> {
+export async function getTeamPipelineForEmail(
+  email: string,
+  month: string | null,
+  fresh = false,
+  options?: { isAdmin?: boolean },
+): Promise<TeamPipeline> {
   if (!email) return emptyPipeline("Equipe", "Sua sessão não possui um e-mail válido.");
   try {
     const [caller, departments] = await Promise.all([findBitrixUserByEmail(email), listAllDepartments()]);
     if (!caller) return emptyPipeline("Equipe", "Seu e-mail não foi encontrado entre os usuários do Bitrix24.");
-    const scope = scopeForUser(caller, departments);
+    const scope = resolveScope(caller, departments, options?.isAdmin === true);
     return await buildTeamPipeline(scope.targets, scope.scopeLabel, monthRange(month) ? month : null, fresh);
   } catch (error) {
     return emptyPipeline("Equipe", error instanceof Error ? error.message : "Não foi possível consultar o Bitrix24.");
@@ -436,6 +476,7 @@ export async function getExpiringLeadsForEmail(
   brokerId: string,
   mode: ExpiringLeadsMode = "critical",
   fresh = false,
+  options?: { isAdmin?: boolean },
 ): Promise<ExpiringLeadsResult> {
   const failed = (error: string): ExpiringLeadsResult => ({
     ok: false,
@@ -453,7 +494,7 @@ export async function getExpiringLeadsForEmail(
     ]);
     if (!caller) return failed("Seu e-mail não foi encontrado no Bitrix24.");
     if (!broker) return failed("Corretor não encontrado no Bitrix24.");
-    const scope = scopeForUser(caller, departments);
+    const scope = resolveScope(caller, departments, options?.isAdmin === true);
     const allowed = new Set(scope.targets.map((department) => department.id));
     if (!(broker.UF_DEPARTMENT ?? []).map(Number).some((id) => allowed.has(id))) {
       return failed("Acesso negado: o corretor está fora do seu escopo.");

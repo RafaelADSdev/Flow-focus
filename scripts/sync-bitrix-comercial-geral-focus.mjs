@@ -422,7 +422,7 @@ function buildRows(eligible, roulette, corretorByBitrixId, existingByDeal) {
 
     const corretorId = existing?.corretor_id ?? mappedCorretor;
 
-    const captadaEm = existing?.captada_em ?? (corretorId && dateCreate ? dateCreate : null);
+    const captadaEm = existing?.captada_em ?? null;
 
 
 

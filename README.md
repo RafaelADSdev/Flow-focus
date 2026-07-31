@@ -226,8 +226,8 @@ lib/schemas/                 schemas Zod compartilhados
 lib/supabase/                clients browser/server e sessao
 supabase/migrations/         schema, RLS, RPCs e cron
 supabase/functions/          webhook Bitrix24 e payload de teste
-PRODUCT.md                   contexto estrategico do produto
-DESIGN.md                    tokens e regras visuais
+docs/product.md              contexto estrategico do produto
+docs/design.md               tokens e regras visuais
 ```
 
 ## Proximos passos recomendados

@@ -525,7 +525,7 @@ async function synchronizeComercialGeralDeals() {
       const mappedCorretor = assigned ? corretorByBitrixId.get(assigned) ?? null : null;
       const corretorId = existing?.corretor_id ?? mappedCorretor;
       const dateCreate = String(deal.DATE_CREATE ?? "") || null;
-      const captadaEm = existing?.captada_em ?? (corretorId && dateCreate ? dateCreate : null);
+      const captadaEm = existing?.captada_em ?? null;
       if (corretorId) comCorretor += 1;
 
       return {
