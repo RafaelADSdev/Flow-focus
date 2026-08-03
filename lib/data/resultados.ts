@@ -13,7 +13,7 @@ import { getViewerContext, type ViewerContext } from "@/lib/auth/viewer-context"
 import { canViewResultados } from "@/lib/auth/perfil";
 import type { StatusOportunidade } from "@/lib/database.types";
 import { getBitrixCaptureTarget } from "@/lib/bitrix/capture-target";
-import { isCapturaDoSistema, partitionRoletas } from "@/lib/data/captura-sistema";
+import { filterCapturasConfirmadasDoSistema, isCapturaDoSistema, partitionRoletas } from "@/lib/data/captura-sistema";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseEnv, hasSupabaseSecretKey } from "@/lib/supabase/env";
 import type { ResultadoBucket, ResultadoLead, ResultadosData, ResultadoTopCorretor } from "@/lib/types/resultados";
@@ -322,13 +322,15 @@ export async function getResultadosData(): Promise<ResultadosData> {
   if (!viewer || !canViewResultados(viewer.perfil)) return emptyData();
 
   const admin = createAdminClient();
-  const [usersResult, roletas, brokerRoletaPairs, capturedOpportunities] = await Promise.all([
+  const [usersResult, roletas, brokerRoletaPairs, capturedOpportunities, capturasDiariasResult] = await Promise.all([
     admin.from("usuarios").select("id, nome, equipe_id, equipe_nome, perfil, foto_url, bitrix_user_id").eq("ativo", true).eq("perfil", "corretor"),
     listRoletas(admin),
     listBrokerRoletaPairs(admin),
     listCapturedOpportunities(admin),
+    admin.from("capturas_diarias").select("corretor_id, data, quantidade_captada"),
   ]);
   if (usersResult.error) throw new Error(usersResult.error.message);
+  if (capturasDiariasResult.error) throw new Error(capturasDiariasResult.error.message);
 
   const { capturaRoletaIds, comercialGeralRoletaIds } = partitionRoletas(roletas);
   const comercialOpportunities = await listComercialGeralOpportunities(admin, comercialGeralRoletaIds);
@@ -351,12 +353,18 @@ export async function getResultadosData(): Promise<ResultadosData> {
     inBrokerCarteira(item)
     && isCapturaDoSistema(item, capturaRoletaIds, comercialGeralRoletaIds)
   ));
+  const confirmedCapturas = filterCapturasConfirmadasDoSistema(
+    scopedCapturas,
+    capturaRoletaIds,
+    comercialGeralRoletaIds,
+    capturasDiariasResult.data ?? [],
+  );
 
   const scopedComercial = comercialOpportunities.filter(inBrokerCarteira);
 
   const snapshotDealIds = [
     ...new Set([
-      ...scopedCapturas.map((item) => item.bitrix_deal_id),
+      ...confirmedCapturas.map((item) => item.bitrix_deal_id),
       ...scopedComercial.map((item) => item.bitrix_deal_id),
     ]),
   ];
@@ -371,7 +379,7 @@ export async function getResultadosData(): Promise<ResultadosData> {
     ...quarantineDeals.map((deal) => deal.categoryId),
   ]);
 
-  const capturaLeads: ResultadoLead[] = scopedCapturas.map((item) => {
+  const capturaLeads: ResultadoLead[] = confirmedCapturas.map((item) => {
     const snapshot = snapshots.get(item.bitrix_deal_id);
     const stageId = stripStageSemanticSuffix(snapshot?.stageId ?? item.bitrix_stage_id);
     const stage = resolveStageName(stageNamesByCategory, snapshot, item.bitrix_stage_id, "Etapa não identificada");
@@ -402,7 +410,7 @@ export async function getResultadosData(): Promise<ResultadosData> {
     );
   }
 
-  for (const item of [...scopedCapturas, ...scopedComercial]) {
+  for (const item of [...confirmedCapturas, ...scopedComercial]) {
     if (quarentenaSeen.has(item.bitrix_deal_id)) continue;
     const snapshot = snapshots.get(item.bitrix_deal_id);
     if (!isQuarentenaComercialGeral(snapshot, comercialCategoryId)) continue;

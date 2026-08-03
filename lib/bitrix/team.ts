@@ -2,7 +2,7 @@ import "server-only";
 
 import { cached, invalidateCachePrefix, mapLimit } from "@/lib/bitrix/cache";
 import { bitrixCallPage } from "@/lib/bitrix/client";
-import { normalizeBitrixStageColor } from "@/lib/bitrix/stage-color";
+import { fetchBitrixDealStages } from "@/lib/bitrix/deal-stages";
 import type {
   BitrixTeamUser,
   BrokerPipelineRow,
@@ -54,7 +54,6 @@ type RawBitrixUser = {
 
 type Department = { id: number; name: string; parent: number | null };
 type RawDepartment = { ID: number | string; NAME: string; PARENT?: number | string | null };
-type RawStage = { STATUS_ID: string; NAME: string; SORT?: number | string; COLOR?: string | null };
 
 function params(entries: Record<string, string>) {
   return new URLSearchParams(entries);
@@ -229,25 +228,12 @@ async function resolvePipeline() {
 
 async function getPipelineStages(categoryId: string) {
   return cached(`team:stages:${categoryId}`, 10 * 60_000, async () => {
-    let result: RawStage[] = [];
-    try {
-      result = (await bitrixCallPage<RawStage[]>(
-        "crm.dealcategory.stage.list",
-        params({ id: categoryId }),
-      )).result;
-    } catch {
-      result = (await bitrixCallPage<RawStage[]>(
-        "crm.status.list",
-        params({ "filter[ENTITY_ID]": `DEAL_STAGE_${categoryId}` }),
-      )).result;
-    }
-    return result
-      .sort((a, b) => Number(a.SORT ?? 0) - Number(b.SORT ?? 0))
-      .map((stage) => ({
-        id: stage.STATUS_ID,
-        name: stage.NAME,
-        color: normalizeBitrixStageColor(stage.COLOR),
-      }));
+    const stages = await fetchBitrixDealStages(categoryId);
+    return stages.map((stage) => ({
+      id: stage.id,
+      name: stage.name,
+      color: stage.color,
+    }));
   });
 }
 

@@ -24,3 +24,15 @@ export async function findBitrixUserByEmail(email: string) {
     String(user.EMAIL ?? "").trim().toLocaleLowerCase() === normalizedEmail
   )) ?? null;
 }
+
+export async function findBitrixUserById(bitrixUserId: string) {
+  const normalizedId = bitrixUserId.trim();
+  if (!normalizedId) return null;
+
+  const users = await bitrixCall<BitrixUserRecord[]>("user.get", new URLSearchParams({
+    "FILTER[ID]": normalizedId,
+    "FILTER[ACTIVE]": "true",
+  }));
+
+  return users.find((user) => String(user.ID ?? "").trim() === normalizedId) ?? null;
+}

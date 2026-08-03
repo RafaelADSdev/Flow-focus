@@ -2,26 +2,39 @@ function isLostStageName(name: string) {
   return /perdid|prazo/i.test(name);
 }
 
-const STAGE_PALETTE = [
-  "oklch(0.58 0.12 285)",
-  "oklch(0.60 0.11 255)",
-  "oklch(0.62 0.10 230)",
-  "oklch(0.64 0.09 205)",
-  "oklch(0.62 0.10 175)",
-  "oklch(0.60 0.09 155)",
-  "oklch(0.58 0.08 95)",
-  "oklch(0.56 0.10 70)",
-] as const;
+/** Cores oficiais da esteira Comercial - GERAL no Bitrix24 (category 16). */
+const COMERCIAL_GERAL_STAGE_COLORS: Array<{ match: RegExp; color: string }> = [
+  { match: /novo/, color: "#003172" },
+  { match: /tentativa/, color: "#FFF55A" },
+  { match: /em atendimento|atend\./, color: "#00ADF2" },
+  { match: /agendad/, color: "#074AA3" },
+  { match: /realizad/, color: "#0856BD" },
+  { match: /proposta/, color: "#00A99D" },
+  { match: /rodad/, color: "#DBDDE0" },
+  { match: /assinad|ganh/, color: "#7BD500" },
+  { match: /prazo.*perdid|perdid.*prazo/, color: "#9F0037" },
+  { match: /perdid/, color: "#FF5752" },
+];
 
 export function stageBarColor(name: string, index: number) {
-  if (isLostStageName(name)) return "var(--danger)";
   const normalized = name.trim().toLowerCase();
-  if (normalized.includes("tentativa")) return STAGE_PALETTE[0];
-  if (normalized.includes("novo")) return STAGE_PALETTE[1];
-  if (normalized.includes("agendad")) return STAGE_PALETTE[2];
-  if (normalized.includes("realizad")) return STAGE_PALETTE[3];
-  if (normalized.includes("andamento") || normalized.includes("atendimento")) return STAGE_PALETTE[4];
-  if (normalized.includes("proposta")) return STAGE_PALETTE[5];
-  if (normalized.includes("assinad") || normalized.includes("ganh")) return "var(--success)";
-  return STAGE_PALETTE[index % STAGE_PALETTE.length];
+  if (isLostStageName(name)) {
+    return normalized.includes("prazo") ? "#9F0037" : "#FF5752";
+  }
+
+  for (const entry of COMERCIAL_GERAL_STAGE_COLORS) {
+    if (entry.match.test(normalized)) return entry.color;
+  }
+
+  const palette = [
+    "#003172",
+    "#FFF55A",
+    "#00ADF2",
+    "#074AA3",
+    "#0856BD",
+    "#00A99D",
+    "#DBDDE0",
+    "#7BD500",
+  ] as const;
+  return palette[index % palette.length];
 }

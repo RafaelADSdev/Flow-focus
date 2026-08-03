@@ -12,7 +12,7 @@ import { hasSupabaseSecretKey } from "@/lib/supabase/env";
 import { canManageOperacao, mapPerfil } from "@/lib/auth/perfil";
 import { hasBitrixEnv } from "@/lib/bitrix/client";
 import { fetchBitrixUserPhotos } from "@/lib/bitrix/fetch-user-photos";
-import { findBitrixUserByEmail } from "@/lib/bitrix/find-user";
+import { findBitrixUserByEmail, findBitrixUserById, type BitrixUserRecord } from "@/lib/bitrix/find-user";
 import { resolveUserDisplayName } from "@/lib/bitrix/user-display-name";
 
 export type LoadedAuthProfile = {
@@ -25,11 +25,70 @@ export type LoadedAuthProfile = {
   fotoUrl: string | null;
 };
 
-function nomeFromAuth(authUser: User): string {
+function nomeFromAuth(authUser: User, bitrixUser?: BitrixUserRecord | null): string {
   return resolveUserDisplayName({
+    bitrixUser,
     existingName: typeof authUser.user_metadata?.nome === "string" ? authUser.user_metadata.nome : null,
     email: authUser.email ?? "usuario",
   });
+}
+
+async function resolveBitrixUserForProfile(
+  authUser: User,
+  profile?: Pick<UsuarioProfileRow, "bitrix_user_id"> | null,
+) {
+  if (!hasBitrixEnv()) return null;
+
+  const bitrixUserId = profile?.bitrix_user_id?.trim()
+    || (typeof authUser.app_metadata?.bitrix_user_id === "string" ? authUser.app_metadata.bitrix_user_id.trim() : "");
+  if (bitrixUserId) {
+    try {
+      const byId = await findBitrixUserById(bitrixUserId);
+      if (byId) return byId;
+    } catch {
+      // segue para busca por e-mail
+    }
+  }
+
+  const email = authUser.email?.trim().toLowerCase();
+  if (!email) return null;
+
+  try {
+    return await findBitrixUserByEmail(email);
+  } catch {
+    return null;
+  }
+}
+
+async function persistProfileIdentity(
+  authUser: User,
+  profile: UsuarioProfileRow,
+  bitrixUser: BitrixUserRecord | null,
+  nome: string,
+  fotoUrl: string | null,
+) {
+  if (!hasSupabaseSecretKey()) return;
+
+  const matchedBitrixUserId = String(bitrixUser?.ID ?? profile.bitrix_user_id ?? "").trim() || null;
+  const shouldUpdateNome = nome !== profile.nome;
+  const shouldUpdateBitrixId = matchedBitrixUserId && matchedBitrixUserId !== (profile.bitrix_user_id?.trim() || null);
+  const shouldUpdatePhoto = fotoUrl && fotoUrl !== (profile.foto_url?.trim() || null);
+
+  if (!shouldUpdateNome && !shouldUpdateBitrixId && !shouldUpdatePhoto) return;
+
+  const admin = createAdminClient();
+  const update: Record<string, string | null> = {};
+  if (shouldUpdateNome) update.nome = nome;
+  if (shouldUpdateBitrixId) update.bitrix_user_id = matchedBitrixUserId;
+  if (shouldUpdatePhoto) update.foto_url = fotoUrl;
+
+  await admin.from("usuarios").update(update).eq("id", authUser.id);
+
+  if (shouldUpdateNome) {
+    await admin.auth.admin.updateUserById(authUser.id, {
+      user_metadata: { ...authUser.user_metadata, nome },
+    });
+  }
 }
 
 type UsuarioProfileRow = {
@@ -89,10 +148,13 @@ async function readUsuarioProfile(authUser: User): Promise<{ data: UsuarioProfil
   };
 }
 
-async function resolveProfilePhoto(authUser: User, profile: UsuarioProfileRow) {
+async function resolveProfilePhoto(authUser: User, profile: UsuarioProfileRow, bitrixUser?: BitrixUserRecord | null) {
   const cachedPhoto = profile.foto_url?.trim() || null;
+  const bitrixPhoto = String(bitrixUser?.PERSONAL_PHOTO ?? "").trim() || null;
+  if (bitrixPhoto) return bitrixPhoto;
   if (cachedPhoto) return cachedPhoto;
-  const bitrixUserId = profile.bitrix_user_id?.trim();
+
+  const bitrixUserId = String(bitrixUser?.ID ?? profile.bitrix_user_id ?? "").trim();
   if (bitrixUserId) {
     const photos = await fetchBitrixUserPhotos([bitrixUserId]);
     return photos.get(bitrixUserId) ?? null;
@@ -102,9 +164,9 @@ async function resolveProfilePhoto(authUser: User, profile: UsuarioProfileRow) {
   if (!email || !hasBitrixEnv()) return null;
 
   try {
-    const bitrixUser = await findBitrixUserByEmail(email);
-    const matchedBitrixUserId = String(bitrixUser?.ID ?? "").trim() || null;
-    const photoUrl = String(bitrixUser?.PERSONAL_PHOTO ?? "").trim() || null;
+    const resolvedUser = bitrixUser ?? await findBitrixUserByEmail(email);
+    const matchedBitrixUserId = String(resolvedUser?.ID ?? "").trim() || null;
+    const photoUrl = String(resolvedUser?.PERSONAL_PHOTO ?? "").trim() || null;
     if (!matchedBitrixUserId) return photoUrl;
 
     if (hasSupabaseSecretKey()) {
@@ -129,9 +191,16 @@ export async function loadAuthProfile(authUser: User): Promise<LoadedAuthProfile
     if (!profile.ativo) return null;
 
     const perfil = profile.perfil ?? perfilFromAuth;
-    const fotoUrl = await resolveProfilePhoto(authUser, profile);
+    const bitrixUser = await resolveBitrixUserForProfile(authUser, profile);
+    const nome = resolveUserDisplayName({
+      bitrixUser,
+      existingName: profile.nome,
+      email: authUser.email ?? "usuario",
+    });
+    const fotoUrl = await resolveProfilePhoto(authUser, profile, bitrixUser);
+    await persistProfileIdentity(authUser, profile, bitrixUser, nome, fotoUrl);
     return {
-      nome: profile.nome,
+      nome,
       perfil,
       equipeId: profile.equipe_id,
       equipeNome: profile.equipe_nome,
@@ -142,8 +211,9 @@ export async function loadAuthProfile(authUser: User): Promise<LoadedAuthProfile
   }
 
   if (canManageOperacao(perfilFromAuth)) {
+    const bitrixUser = await resolveBitrixUserForProfile(authUser);
     return {
-      nome: nomeFromAuth(authUser),
+      nome: nomeFromAuth(authUser, bitrixUser),
       perfil: perfilFromAuth,
       equipeId: null,
       equipeNome: null,
