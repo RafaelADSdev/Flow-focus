@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { User } from "@supabase/supabase-js";
-import type { PerfilUsuario } from "@/lib/database.types";
+import type { Database, PerfilUsuario } from "@/lib/database.types";
 import {
   resolvePaginasAcesso,
   type PaginaAcesso,
@@ -77,7 +77,7 @@ async function persistProfileIdentity(
   if (!shouldUpdateNome && !shouldUpdateBitrixId && !shouldUpdatePhoto) return;
 
   const admin = createAdminClient();
-  const update: Record<string, string | null> = {};
+  const update: Database["public"]["Tables"]["usuarios"]["Update"] = {};
   if (shouldUpdateNome) update.nome = nome;
   if (shouldUpdateBitrixId) update.bitrix_user_id = matchedBitrixUserId;
   if (shouldUpdatePhoto) update.foto_url = fotoUrl;
