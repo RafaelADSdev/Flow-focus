@@ -63,7 +63,7 @@ export function LoginForm() {
   return (
     <form className="login-form" onSubmit={onSubmit} noValidate aria-busy={pending}>
       <div className="field">
-        <label htmlFor="email">E-mail corporativo</label>
+        <label htmlFor="email">E-mail de acesso ao Bitrix24</label>
         <input
           id="email"
           name="email"
@@ -93,7 +93,9 @@ export function LoginForm() {
             defaultValue={isDemo ? "flowfocus" : undefined}
             aria-invalid={passwordError ? true : undefined}
             aria-describedby={
-              [passwordError ? "password-error" : null, "login-help"].filter(Boolean).join(" ") || undefined
+              [passwordError ? "password-error" : null, "password-hint", "login-help"]
+                .filter(Boolean)
+                .join(" ") || undefined
             }
             disabled={pending}
           />
@@ -106,6 +108,10 @@ export function LoginForm() {
             {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
         </div>
+        <small id="password-hint" className="field-hint">
+          Utilize seu ID do Bitrix24 com 6 dígitos, completando com zeros à esquerda. Exemplo: se seu ID é
+          1327, a senha é 001327.
+        </small>
         {passwordError ? (
           <p id="password-error" className="field-error" role="alert">
             {passwordError}
