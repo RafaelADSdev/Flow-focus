@@ -67,7 +67,7 @@ export function LeadsRoletaChart({ data }: LeadsRoletaChartProps) {
               iconType="circle"
               wrapperStyle={{ fontSize: 12, color: "var(--muted)", paddingBottom: 8 }}
             />
-            <Bar dataKey="ativos" name="Leads ativos" stackId="a" fill="#3C1A4F" radius={[0, 0, 0, 0]} barSize={16} />
+            <Bar dataKey="ativos" name="Leads ativos" stackId="a" fill="#3C1048" radius={[0, 0, 0, 0]} barSize={16} />
             <Bar dataKey="perdidos" name="Perdidos" stackId="a" fill="oklch(0.56 0.19 28)" radius={[0, 8, 8, 0]} barSize={16} />
           </BarChart>
         </ResponsiveContainer>

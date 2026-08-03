@@ -56,7 +56,7 @@ export function LeadsFunnelChart({ data, ariaLabel }: LeadsFunnelChartProps) {
             {data.map((entry) => (
               <Cell
                 key={entry.status}
-                fill={entry.gargalo ? "oklch(0.67 0.14 75)" : "#3C1A4F"}
+                fill={entry.gargalo ? "oklch(0.67 0.14 75)" : "#3C1048"}
               />
             ))}
           </Bar>

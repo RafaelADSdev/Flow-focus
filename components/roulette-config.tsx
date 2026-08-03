@@ -855,7 +855,7 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
             ) : null}
           </div>
           <div
-            className="permission-table permission-list-table"
+            className="permission-table permission-list-table permission-matrix"
             role="table"
             aria-label="Permissões por corretor"
           >

@@ -1,23 +1,23 @@
 ---
 name: Flow Focus
-description: Central de operação comercial — marfim quente no trabalho, preto na navegação e roxo nas decisões.
+description: Central de operação comercial — branco no trabalho, preto na navegação e roxo nas decisões.
 colors:
-  background: "#F7E7CE"
-  surface: "#FFF9EF"
-  surface-raised: "#FFFDF8"
-  surface-strong: "#EAD7BA"
+  background: "#FFFFFF"
+  surface: "#FFFFFF"
+  surface-raised: "#FFFFFF"
+  surface-strong: "#F0F0F0"
   ink: "#1C1C1C"
-  muted: "#62584D"
-  line: "#D7C2A3"
-  primary: "#3C1A4F"
+  muted: "#5C5C5C"
+  line: "#E2E2E2"
+  primary: "#3C1048"
   primary-dark: "#1C1C1C"
-  primary-hover: "#2D103E"
+  primary-hover: "#2D0C36"
   primary-soft: "#EADFED"
-  accent: "#F7E7CE"
+  accent: "#FFFFFF"
   border-strong: "#A98DB2"
   dark-hover: "#2B2130"
   dark-line: "#2F2A31"
-  on-dark-muted: "#CBBDA8"
+  on-dark-muted: "#D4D4D4"
   success: "oklch(0.55 0.13 155)"
   success-soft: "oklch(0.94 0.04 155)"
   warning: "oklch(0.67 0.14 75)"
@@ -69,16 +69,16 @@ spacing:
 components:
   button-primary:
     backgroundColor: "{colors.primary}"
-    textColor: "#F7E7CE"
+    textColor: "#FFFFFF"
     rounded: "{rounded.sm}"
     padding: "0 15px"
     height: "40px"
   button-primary-hover:
-    backgroundColor: "#2D103E"
-    textColor: "#F7E7CE"
+    backgroundColor: "#2D0C36"
+    textColor: "#FFFFFF"
     rounded: "{rounded.sm}"
   button-secondary:
-    backgroundColor: "#FFFDF8"
+    backgroundColor: "#FFFFFF"
     textColor: "{colors.primary}"
     rounded: "{rounded.sm}"
     padding: "0 15px"
@@ -96,7 +96,7 @@ components:
 
 **Creative North Star: "A Central Silenciosa"**
 
-Uma central de operações ao início da manhã: luz marfim, superfícies diretas, navegação preta e roxo reservado para estado e decisão. O sistema prioriza leitura rápida de limites, bloqueios e filas — não impressiona, orienta. A estratégia cromática é **restrita**: identidade aparece na sidebar, no login e em poucos pontos de alta utilidade; o conteúdo operacional vive em marfim e tons quentes derivados.
+Uma central de operações ao início da manhã: luz branca, superfícies diretas, navegação preta e roxo reservado para estado e decisão. O sistema prioriza leitura rápida de limites, bloqueios e filas — não impressiona, orienta. A estratégia cromática é **restrita**: identidade aparece na sidebar, no login e em poucos pontos de alta utilidade; o conteúdo operacional vive em branco e cinzas derivados.
 
 Rejeita explicitamente o visual de SaaS genérico, painéis bancários opressivos, gamificação, glassmorphism, gradientes decorativos e grids de cards idênticos.
 
@@ -110,25 +110,25 @@ Rejeita explicitamente o visual de SaaS genérico, painéis bancários opressivo
 
 ## 2. Colors
 
-Paleta oficial preta, marfim e roxa; semáforo discreto e independente para status.
+Paleta oficial preta, branca e roxa; semáforo discreto e independente para status.
 
 ### Primary
 
-- **Roxo Focus** (`#3C1A4F`): botões primários, links de ação, seleção ativa e ícones de destaque.
+- **Roxo Focus** (`#3C1048`): botões primários, links de ação, seleção ativa e ícones de destaque.
 - **Preto Operacional** (`#1C1C1C`): sidebar, header mobile, painel de login lateral, banner de limite diário e texto principal.
 - **Roxo Suave** (`#EADFED`): fundos de destaque leve, pills informativas e badges info.
 
 ### Brand Accent
 
-- **Marfim Focus** (`#F7E7CE`): canvas principal, texto sobre fundos escuros, barras de progresso e contadores na navegação.
+- **Branco Focus** (`#FFFFFF`): canvas principal, texto sobre fundos escuros, barras de progresso e contadores na navegação.
 
 ### Neutral
 
-- **Marfim** (`#F7E7CE`): fundo principal e cor de contraste sobre preto e roxo.
-- **Superfície Clara** (`#FFF9EF`): painéis secundários, resumos de drawer e cabeçalhos de permissão.
+- **Branco** (`#FFFFFF`): fundo principal e cor de contraste sobre preto e roxo.
+- **Superfície Clara** (`#FFFFFF`): painéis secundários, resumos de drawer e cabeçalhos de permissão.
 - **Tinta** (`#1C1C1C`): texto principal e títulos.
-- **Mudo** (`#62584D`): texto secundário, labels de tabela e descrições — contraste ≥4,5:1 sobre marfim.
-- **Linha** (`#D7C2A3`): divisores, bordas de campo e separadores de lista.
+- **Mudo** (`#5C5C5C`): texto secundário, labels de tabela e descrições — contraste ≥4,5:1 sobre branco.
+- **Linha** (`#E2E2E2`): divisores, bordas de campo e separadores de lista.
 
 ### Status
 
@@ -140,7 +140,7 @@ Paleta oficial preta, marfim e roxa; semáforo discreto e independente para stat
 
 **A Regra da Cor Rara.** O acento saturado ocupa ≤10% de qualquer tela operacional. Sua escassez sinaliza estado — não marca presença de marca.
 
-**A Regra do Preenchimento.** Botões e badges roxos usam texto marfim. Fundos suaves de status usam texto escuro da mesma família cromática.
+**A Regra do Preenchimento.** Botões e badges roxos usam texto branco. Fundos suaves de status usam texto escuro da mesma família cromática.
 
 ## 3. Typography
 
@@ -182,10 +182,10 @@ Sistema predominantemente **plano com camadas tonais**. Profundidade vem de cont
 ### Buttons
 
 - **Shape:** cantos de 10px (`--radius-sm`), altura mínima 40px.
-- **Primary:** fundo roxo Focus, texto marfim, peso 650; hover escurece levemente e `translateY(-1px)`.
-- **Secondary:** fundo marfim claro, borda roxa suave, texto primary; hover com `primary-soft`.
+- **Primary:** fundo roxo Focus, texto branco, peso 650; hover escurece levemente e `translateY(-1px)`.
+- **Secondary:** fundo branco, borda roxa suave, texto primary; hover com `primary-soft`.
 - **Quiet / Danger:** variantes para ações terciárias e destrutivas.
-- **Focus:** outline 3px `rgb(60 26 79 / 0.34)` com offset 2px.
+- **Focus:** outline 3px `rgb(60 16 72 / 0.34)` com offset 2px.
 
 ### Status Badges
 
@@ -195,26 +195,26 @@ Sistema predominantemente **plano com camadas tonais**. Profundidade vem de cont
 ### Cards / Containers
 
 - **Corner Style:** 14px (`--radius`) em painéis; 10px em banners e resumos.
-- **Background:** marfim claro ou `surface`; banner do corretor usa preto operacional.
+- **Background:** branco ou `surface`; banner do corretor usa preto operacional.
 - **Border:** `1px solid var(--line)` quando não há sombra.
 - **Padding:** múltiplos de 8px; painéis principais 24–30px.
 
 ### Inputs / Fields
 
-- **Style:** borda `line`, raio 9–10px, fundo marfim claro.
+- **Style:** borda `line`, raio 9–10px, fundo branco.
 - **Focus:** borda primary + halo `primary-soft` (3px).
 - **Placeholder:** `#6D6256` — contraste ≥4,5:1.
 - **Error:** banner `danger-soft` com texto escuro vermelho.
 
 ### Navigation
 
-- **Sidebar:** 248px, fundo preto operacional, links com estado active em roxo Focus, contador marfim em pill.
+- **Sidebar:** 248px, fundo preto operacional, links com estado active em roxo Focus, contador branco em pill.
 - **Mobile:** header fixo + bottom nav de 4 itens; badge de contagem em vermelho.
 - **Collapsed (≤1080px):** sidebar 82px, só ícones.
 
 ### Broker Overview (assinatura)
 
-Banner preto em grid 3 colunas: limite diário com barra marfim, estado do ciclo com ícone roxo, CTA de captura. No mobile vira stack vertical.
+Banner preto em grid 3 colunas: limite diário com barra branca, estado do ciclo com ícone roxo, CTA de captura. No mobile vira stack vertical.
 
 ### Audit Drawer
 

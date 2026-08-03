@@ -28,8 +28,8 @@ export function LeadsEvolutionChart({ data }: LeadsEvolutionChartProps) {
         <AreaChart data={data} margin={{ top: 12, right: 12, left: -12, bottom: 0 }}>
           <defs>
             <linearGradient id="leadsRecebidos" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#3C1A4F" stopOpacity={0.28} />
-              <stop offset="100%" stopColor="#3C1A4F" stopOpacity={0} />
+              <stop offset="0%" stopColor="#3C1048" stopOpacity={0.28} />
+              <stop offset="100%" stopColor="#3C1048" stopOpacity={0} />
             </linearGradient>
             <linearGradient id="leadsPerdidos" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#B42318" stopOpacity={0.18} />
@@ -65,7 +65,7 @@ export function LeadsEvolutionChart({ data }: LeadsEvolutionChartProps) {
             type="monotone"
             dataKey="recebidos"
             name="Recebidos"
-            stroke="#3C1A4F"
+            stroke="#3C1048"
             strokeWidth={2.25}
             fill="url(#leadsRecebidos)"
           />

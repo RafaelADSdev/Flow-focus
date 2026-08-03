@@ -5,7 +5,7 @@ import { ResultsTopCorretores } from "@/components/results-top-corretores";
 import type { ResultadoCapturaEquipe, ResultadoTopCorretor } from "@/lib/types/resultados";
 
 const EQUIPE_CHART_SERIES = [
-  { key: "capturas", label: "Capturas", color: "#3C1A4F" },
+  { key: "capturas", label: "Capturas", color: "#3C1048" },
   { key: "quarentena", label: "Em quarentena", color: "oklch(0.67 0.14 75)" },
 ] as const;
 

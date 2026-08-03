@@ -8,15 +8,15 @@ type PartnerBrandLockupProps = {
 };
 
 const FLOW = {
-  "on-light": "/brand/logo-claro.png?v=4",
-  "on-dark": "/brand/logo-escuro.png?v=4",
+  "on-light": "/brand/logo-claro.png",
+  "on-dark": "/brand/logo-escuro.png",
 } as const;
 
 const HUBON = {
   /** Login: HubOn colorida. */
-  "on-light": "/brand/hubon-cor.png?v=5",
+  "on-light": "/brand/hubon-cor.png",
   /** Sistema (sidebar): HubOn branco sem fundo. */
-  "on-dark": "/brand/hubon-branco.png?v=6",
+  "on-dark": "/brand/hubon-branco.png",
 } as const;
 
 export function PartnerBrandLockup({
@@ -30,20 +30,10 @@ export function PartnerBrandLockup({
   return (
     <div
       className={`partner-brand-lockup${compact ? " is-compact" : ""}${className ? ` ${className}` : ""}`}
-      aria-label="Flow Focus e HubOn"
+      aria-label="HubOn e Flow Focus"
     >
-      <Image
-        src={flowSrc}
-        alt="Flow Focus"
-        width={compact ? 96 : 200}
-        height={compact ? 54 : 112}
-        className="partner-brand-flow"
-        priority
-        unoptimized
-      />
       {!compact ? (
         <>
-          <span className="partner-brand-divider" aria-hidden="true" />
           <Image
             src={hubonSrc}
             alt="HubOn"
@@ -53,8 +43,18 @@ export function PartnerBrandLockup({
             priority
             unoptimized
           />
+          <span className="partner-brand-divider" aria-hidden="true" />
         </>
       ) : null}
+      <Image
+        src={flowSrc}
+        alt="Flow Focus"
+        width={compact ? 96 : 200}
+        height={compact ? 54 : 112}
+        className="partner-brand-flow"
+        priority
+        unoptimized
+      />
     </div>
   );
 }

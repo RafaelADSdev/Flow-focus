@@ -12,7 +12,7 @@ import {
   YAxis,
 } from "recharts";
 
-const BAR_COLORS = ["#3C1A4F", "#1C1C1C", "#8B5E3C", "#A98DB2", "#62584D", "#2D103E"];
+const BAR_COLORS = ["#3C1048", "#1C1C1C", "#8B5E3C", "#A98DB2", "#62584D", "#2D0C36"];
 
 type ChartSeries = {
   key: string;

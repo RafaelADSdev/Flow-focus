@@ -134,16 +134,11 @@ export function AuditPanel({ data, bitrixPortalBase = "" }: { data: AuditoriasPa
       ) : null}
       {error ? <p className="form-error" role="alert">{error}</p> : null}
 
-      <section className="audit-stats" aria-label="Resumo da auditoria">
-        <div><span className="stat-symbol stat-warning"><Clock3 size={19} /></span><span><strong>{data.aguardando}</strong><small>Leads aguardando checklist</small></span></div>
-        <div><span className="stat-symbol stat-success"><Check size={19} /></span><span><strong>{data.aprovadas_semana}</strong><small>Leads aprovados na semana</small></span></div>
-        <div><span className="stat-symbol stat-danger"><ShieldAlert size={19} /></span><span><strong>{data.bloqueados}</strong><small>Corretores bloqueados</small></span></div>
-      </section>
-
-      <section className="section-block">
-        <div className="section-heading">
+      <section className="audit-module" aria-labelledby="audit-queue-heading">
+        <div className="audit-overview">
+          <div className="section-heading audit-module-heading">
           <div>
-            <h2>Fila de auditoria</h2>
+            <h2 id="audit-queue-heading">Fila de auditoria</h2>
             <p>
               {queue.length} corretor{queue.length === 1 ? "" : "es"} na fila
               {corretoresComPendencias > 0 ? (
@@ -153,8 +148,17 @@ export function AuditPanel({ data, bitrixPortalBase = "" }: { data: AuditoriasPa
             </p>
           </div>
           <span className="sync-label"><RefreshCw size={14} />Sincronizado {formatDate(data.gerado_em)}</span>
+          </div>
+
+          <div className="audit-stats" aria-label="Resumo da auditoria">
+          <div><span className="stat-symbol stat-warning"><Clock3 size={19} /></span><span><strong>{data.aguardando}</strong><small>Leads aguardando checklist</small></span></div>
+          <div><span className="stat-symbol stat-success"><Check size={19} /></span><span><strong>{data.aprovadas_semana}</strong><small>Leads aprovados na semana</small></span></div>
+          <div><span className="stat-symbol stat-danger"><ShieldAlert size={19} /></span><span><strong>{data.bloqueados}</strong><small>Corretores bloqueados</small></span></div>
+          </div>
+
         </div>
 
+        <div className="audit-list-panel">
         {queue.length ? (
           <div className="audit-list">
             {queue.map((item, index) => {
@@ -195,6 +199,7 @@ export function AuditPanel({ data, bitrixPortalBase = "" }: { data: AuditoriasPa
             <p>Não há leads ativos aguardando checklist. Novas capturas aparecerão aqui automaticamente.</p>
           </div>
         )}
+        </div>
       </section>
 
       {selected ? (

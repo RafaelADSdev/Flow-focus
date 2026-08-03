@@ -329,7 +329,11 @@ export async function getRoletasConfigData(): Promise<RoletasConfigData> {
   }
 
   if (hasSupabaseSecretKey() && viewer) {
-    return loadRoletasConfigFromTables(viewer);
+    try {
+      return await loadRoletasConfigFromTables(viewer);
+    } catch {
+      // segue para RPC legado
+    }
   }
 
   const supabase = await createClient();
@@ -349,5 +353,5 @@ export async function getRoletasConfigData(): Promise<RoletasConfigData> {
     return getEmptyRoletasConfig();
   }
 
-  throw new Error(`Não foi possível carregar as roletas: ${error?.message ?? "erro desconhecido"}`);
+  return getEmptyRoletasConfig();
 }

@@ -249,7 +249,11 @@ export async function getCarteiraData(): Promise<CarteiraData> {
   }
 
   if (shouldUseTableFallback(error) && hasSupabaseSecretKey()) {
-    return loadCarteiraFromTables(authUser.id);
+    try {
+      return await loadCarteiraFromTables(authUser.id);
+    } catch {
+      // segue para carteira vazia
+    }
   }
 
   return getEmptyCarteira(
