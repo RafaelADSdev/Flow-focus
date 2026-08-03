@@ -418,15 +418,6 @@ export function TeamDashboard() {
 
         <section className="export-card export-stage-card">
           <header><h2>Distribuição por etapa · {department === "__all__" ? "equipe completa" : department}</h2>{query.isFetching ? <span><RefreshCw className="is-spinning" size={12} aria-hidden="true" />Atualizando gráfico…</span> : null}</header>
-          <div className="export-semantic-legend" role="list" aria-label="Padrão de cores dos estados">
-            <span className="is-positive" role="listitem"><i aria-hidden="true" />Positivo</span>
-            <span className="is-warning" role="listitem"><i aria-hidden="true" />Alerta</span>
-            <span className="is-negative" role="listitem"><i aria-hidden="true" />Negativo</span>
-          </div>
-          <p className="export-stage-legend">
-            <span className="export-legend-swatch is-critical" aria-hidden="true" />
-            Barras = cores das etapas no Comercial Geral · número e marca em coral = leads críticos, com mais de 2 dias sem movimentação ou EM ANDAMENTO com Prazo Padrão em até 7 dias (somente com Roleta Atual).
-          </p>
           <TeamStageChart criticalById={aggregates.critical} stages={stages.filter((stage) => !isLostStageName(stage.name)).map((stage) => ({ id: stage.id, name: stage.name, count: aggregates.totals[stage.id] ?? 0, color: stage.color }))} />
           <div className="export-lost-list">{stages.filter((stage) => isLostStageName(stage.name)).map((stage) => <LostStageTag key={stage.id} name={stage.name} count={aggregates.totals[stage.id] ?? 0} />)}</div>
         </section>
