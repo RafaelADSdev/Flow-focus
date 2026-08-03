@@ -2330,8 +2330,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .team-stage-number { align-self: center; color: var(--ink); font-size: .72rem; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
 .team-stage-track { height: 100%; display: flex; align-items: flex-end; overflow: hidden; border-radius: 7px 7px 2px 2px; background: color-mix(in oklab, var(--surface-strong) 32%, transparent); }
 .team-stage-track i { width: 100%; height: var(--stage-size); display: block; border-radius: 6px 6px 0 0; background: var(--stage-bar, color-mix(in oklab, var(--primary) 38%, var(--surface-strong))); transform-origin: bottom; }
-.team-stage-column.has-critical .team-stage-number { color: var(--danger-ink); }
-.team-stage-column.has-critical .team-stage-track i { box-shadow: inset 0 3px 0 var(--danger); }
 .team-stage-label { align-self: start; padding-top: 7px; color: var(--muted); font-size: .62rem; line-height: 1.2; text-align: center; overflow-wrap: anywhere; hyphens: auto; }
 .team-stage-chart.is-compact { height: auto; min-height: 108px; gap: 6px; padding: 0 2px 4px; width: 100%; }
 .team-stage-chart.is-compact .team-stage-column { min-width: 0; flex: 1; grid-template-rows: 14px minmax(44px, 1fr) auto; }

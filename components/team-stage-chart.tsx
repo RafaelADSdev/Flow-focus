@@ -49,7 +49,6 @@ export function TeamStageChart({
     >
       {stages.map((stage, index) => {
         const critical = criticalById?.[stage.id] ?? 0;
-        const hasCritical = critical > 0;
         const barColor = stage.color ?? stageBarColor(stage.name, index);
         const style = {
           "--stage-size": `${Math.max(stage.count ? 5 : 1, Math.round((stage.count / maximum) * 100))}%`,
@@ -58,7 +57,7 @@ export function TeamStageChart({
         const label = compact ? compactStageLabel(stage.name) : stage.name;
         return (
           <div
-            className={`team-stage-column${hasCritical ? " has-critical" : ""}`}
+            className="team-stage-column"
             key={stage.id}
             title={stageAriaLabel(stage.name, stage.count, critical)}
             aria-hidden="true"
