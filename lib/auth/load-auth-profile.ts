@@ -10,7 +10,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasSupabaseSecretKey } from "@/lib/supabase/env";
 import { canManageOperacao, mapPerfil } from "@/lib/auth/perfil";
+import { hasBitrixEnv } from "@/lib/bitrix/client";
 import { fetchBitrixUserPhotos } from "@/lib/bitrix/fetch-user-photos";
+import { findBitrixUserByEmail } from "@/lib/bitrix/find-user";
 import { resolveUserDisplayName } from "@/lib/bitrix/user-display-name";
 
 export type LoadedAuthProfile = {
@@ -87,13 +89,36 @@ async function readUsuarioProfile(authUser: User): Promise<{ data: UsuarioProfil
   };
 }
 
-async function resolveProfilePhoto(profile: UsuarioProfileRow) {
+async function resolveProfilePhoto(authUser: User, profile: UsuarioProfileRow) {
   const cachedPhoto = profile.foto_url?.trim() || null;
   if (cachedPhoto) return cachedPhoto;
   const bitrixUserId = profile.bitrix_user_id?.trim();
-  if (!bitrixUserId) return null;
-  const photos = await fetchBitrixUserPhotos([bitrixUserId]);
-  return photos.get(bitrixUserId) ?? null;
+  if (bitrixUserId) {
+    const photos = await fetchBitrixUserPhotos([bitrixUserId]);
+    return photos.get(bitrixUserId) ?? null;
+  }
+
+  const email = authUser.email?.trim().toLowerCase();
+  if (!email || !hasBitrixEnv()) return null;
+
+  try {
+    const bitrixUser = await findBitrixUserByEmail(email);
+    const matchedBitrixUserId = String(bitrixUser?.ID ?? "").trim() || null;
+    const photoUrl = String(bitrixUser?.PERSONAL_PHOTO ?? "").trim() || null;
+    if (!matchedBitrixUserId) return photoUrl;
+
+    if (hasSupabaseSecretKey()) {
+      const admin = createAdminClient();
+      await admin
+        .from("usuarios")
+        .update({ bitrix_user_id: matchedBitrixUserId, foto_url: photoUrl })
+        .eq("id", authUser.id);
+    }
+
+    return photoUrl;
+  } catch {
+    return null;
+  }
 }
 
 export async function loadAuthProfile(authUser: User): Promise<LoadedAuthProfile | null> {
@@ -104,7 +129,7 @@ export async function loadAuthProfile(authUser: User): Promise<LoadedAuthProfile
     if (!profile.ativo) return null;
 
     const perfil = profile.perfil ?? perfilFromAuth;
-    const fotoUrl = await resolveProfilePhoto(profile);
+    const fotoUrl = await resolveProfilePhoto(authUser, profile);
     return {
       nome: profile.nome,
       perfil,

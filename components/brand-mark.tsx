@@ -9,7 +9,7 @@ type BrandMarkProps = {
 
 const sources = {
   "on-dark": "/brand/logo-escuro.png",
-  "on-light": "/brand/logo-claro.png",
+  "on-light": "/brand/logo-claro-v2.png",
 } as const;
 
 export function BrandMark({ compact = false, variant = "on-dark", className = "" }: BrandMarkProps) {
