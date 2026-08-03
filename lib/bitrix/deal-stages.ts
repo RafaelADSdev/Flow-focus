@@ -1,12 +1,14 @@
 import "server-only";
 
 import { bitrixCallJson, hasBitrixEnv } from "@/lib/bitrix/client";
+import { normalizeBitrixStageColor } from "@/lib/bitrix/stage-color";
 
 export type BitrixDealStage = {
   id: string;
   name: string;
   sort: number;
   semantics: "S" | "F" | "P" | null;
+  color: string | null;
 };
 
 type StatusRow = {
@@ -14,6 +16,7 @@ type StatusRow = {
   NAME?: string;
   SORT?: string | number;
   SEMANTICS?: string | null;
+  COLOR?: string | null;
 };
 
 function normalizeSemantics(value: string | null | undefined): BitrixDealStage["semantics"] {
@@ -41,6 +44,7 @@ export async function fetchBitrixDealStages(categoryId: string): Promise<BitrixD
       name: String(row.NAME ?? id),
       sort: Number(row.SORT ?? 0),
       semantics: normalizeSemantics(row.SEMANTICS),
+      color: normalizeBitrixStageColor(row.COLOR),
     });
   }
   return [...stages.values()].sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "pt-BR"));

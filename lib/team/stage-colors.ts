@@ -14,7 +14,7 @@ const STAGE_PALETTE = [
 ] as const;
 
 export function stageBarColor(name: string, index: number) {
-  if (isLostStageName(name)) return "oklch(0.56 0.19 28)";
+  if (isLostStageName(name)) return "var(--danger)";
   const normalized = name.trim().toLowerCase();
   if (normalized.includes("tentativa")) return STAGE_PALETTE[0];
   if (normalized.includes("novo")) return STAGE_PALETTE[1];
@@ -22,6 +22,6 @@ export function stageBarColor(name: string, index: number) {
   if (normalized.includes("realizad")) return STAGE_PALETTE[3];
   if (normalized.includes("andamento") || normalized.includes("atendimento")) return STAGE_PALETTE[4];
   if (normalized.includes("proposta")) return STAGE_PALETTE[5];
-  if (normalized.includes("assinad") || normalized.includes("ganh")) return "oklch(0.55 0.13 155)";
+  if (normalized.includes("assinad") || normalized.includes("ganh")) return "var(--success)";
   return STAGE_PALETTE[index % STAGE_PALETTE.length];
 }

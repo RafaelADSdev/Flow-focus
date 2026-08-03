@@ -3,6 +3,7 @@ import "server-only";
 import type { User } from "@supabase/supabase-js";
 import { defaultPaginasForPerfil } from "@/lib/auth/paginas-acesso";
 import { bitrixCall, bitrixCallPage, hasBitrixEnv } from "@/lib/bitrix/client";
+import { resolveUserDisplayName } from "@/lib/bitrix/user-display-name";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type JsonRecord = Record<string, unknown>;
@@ -111,13 +112,13 @@ export async function syncBitrixPeople(): Promise<BitrixPeopleSyncSummary> {
       const email = String(bitrixUser.EMAIL ?? "").trim().toLowerCase();
       if (!bitrixUserId || !email) continue;
 
-      const name = [bitrixUser.NAME, bitrixUser.LAST_NAME]
-        .filter(Boolean)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim();
       const profile = bitrixUserId === String(team.bitrix_head_user_id) ? "lider" : "corretor";
       let authUser = authByBitrixId.get(bitrixUserId) ?? authByEmail.get(email);
+      const name = resolveUserDisplayName({
+        bitrixUser,
+        existingName: typeof authUser?.user_metadata?.nome === "string" ? authUser.user_metadata.nome : null,
+        email,
+      });
 
       if (!authUser) {
         const { data, error } = await admin.auth.admin.createUser({

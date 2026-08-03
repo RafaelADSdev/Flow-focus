@@ -12,9 +12,9 @@ function chunks<T>(items: T[], size: number) {
 /** Atualiza os negócios capturados para auditoria e resultados refletirem o Bitrix24. */
 export async function refreshCapturedDealsForCorretores(
   corretorIds: string[],
-  options: { onlyPendingAudit?: boolean } = {},
+  options: { onlyPendingAudit?: boolean; opportunityIds?: string[] } = {},
 ) {
-  if (!hasBitrixEnv() || !corretorIds.length) return;
+  if (!hasBitrixEnv() || !corretorIds.length || options.opportunityIds?.length === 0) return;
 
   const admin = createAdminClient();
   const oportunidades: Array<{ id: string; bitrix_deal_id: string; corretor_id: string | null; captada_em: string | null }> = [];
@@ -27,6 +27,7 @@ export async function refreshCapturedDealsForCorretores(
       .not("captada_em", "is", null)
       .order("captada_em", { ascending: false })
       .range(from, from + 999);
+    if (options.opportunityIds) query = query.in("id", options.opportunityIds);
     if (options.onlyPendingAudit) query = query.is("auditoria_aprovada_em", null);
     const { data, error } = await query;
     if (error || !data?.length) break;

@@ -18,6 +18,7 @@ export type ComercialKanbanStage = {
   id: string;
   name: string;
   semantics: "S" | "F" | "P" | null;
+  color: string | null;
   cards: ComercialKanbanCard[];
 };
 

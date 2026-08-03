@@ -195,6 +195,7 @@ export async function getComercialKanbanData(filters: DashboardFilters): Promise
       id,
       name: meta?.name ?? id.replace(/^C\d+:/, ""),
       semantics: meta?.semantics ?? null,
+      color: meta?.color ?? null,
       cards: [...uniqueCards.values()].sort((a, b) => a.updatedAt.localeCompare(b.updatedAt)),
     };
   });

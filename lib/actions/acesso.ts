@@ -5,6 +5,8 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { syncBitrixPeople, type BitrixPeopleSyncSummary } from "@/lib/bitrix/sync-people";
 import { hasBitrixEnv } from "@/lib/bitrix/client";
+import { findBitrixUserByEmail } from "@/lib/bitrix/find-user";
+import { resolveUserDisplayName } from "@/lib/bitrix/user-display-name";
 import { editarAcessoSchema, novoAcessoSchema } from "@/lib/schemas/acesso";
 import { authErrorMessage } from "@/lib/supabase/auth-errors";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -13,18 +15,10 @@ import { hasSupabaseSecretKey } from "@/lib/supabase/env";
 type ActionResult = { ok: true } | { ok: false; error: string };
 type SyncActionResult = { ok: true; summary: BitrixPeopleSyncSummary } | { ok: false; error: string };
 
-function displayName(email: string) {
-  const local = email.split("@")[0] ?? email;
-  return local
-    .split(/[._-]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function revalidateAcesso() {
   revalidatePath("/configuracoes/acesso");
   revalidatePath("/dashboard");
+  revalidatePath("/resultados");
   revalidatePath("/roletas");
 }
 
@@ -63,14 +57,23 @@ export async function criarAcesso(input: unknown): Promise<ActionResult> {
 
   const payload = parsed.data;
   const admin = createAdminClient();
-  const nome = displayName(payload.email);
+  let bitrixUser = null;
+  if (hasBitrixEnv()) {
+    try {
+      bitrixUser = await findBitrixUserByEmail(payload.email);
+    } catch {
+      // A criação do acesso continua com o fallback do e-mail se o Bitrix estiver indisponível.
+    }
+  }
+  const nome = resolveUserDisplayName({ bitrixUser, email: payload.email });
+  const bitrixUserId = bitrixUser?.ID ? String(bitrixUser.ID) : null;
 
   const { data: authData, error: authError } = await admin.auth.admin.createUser({
     email: payload.email,
     password: payload.senha,
     email_confirm: true,
     user_metadata: { nome },
-    app_metadata: { perfil: payload.perfil },
+    app_metadata: { perfil: payload.perfil, ...(bitrixUserId ? { bitrix_user_id: bitrixUserId } : {}) },
   });
 
   if (authError) {
@@ -89,6 +92,8 @@ export async function criarAcesso(input: unknown): Promise<ActionResult> {
       email: payload.email,
       perfil: payload.perfil,
       equipe_id: payload.equipeId,
+      bitrix_user_id: bitrixUserId,
+      foto_url: String(bitrixUser?.PERSONAL_PHOTO ?? "").trim() || null,
       paginas_acesso: payload.paginasAcesso,
       ativo: true,
     }, { onConflict: "id" });
@@ -102,6 +107,8 @@ export async function criarAcesso(input: unknown): Promise<ActionResult> {
         email: payload.email,
         perfil: payload.perfil,
         equipe_id: payload.equipeId,
+        bitrix_user_id: bitrixUserId,
+        foto_url: String(bitrixUser?.PERSONAL_PHOTO ?? "").trim() || null,
         ativo: true,
       }, { onConflict: "id" }));
   }
@@ -130,7 +137,7 @@ export async function atualizarAcesso(input: unknown): Promise<ActionResult> {
   const payload = parsed.data;
   const admin = createAdminClient();
 
-  const { data: target, error: targetError } = await admin
+  const { error: targetError } = await admin
     .from("usuarios")
     .select("id")
     .eq("id", payload.id)

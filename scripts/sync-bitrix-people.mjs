@@ -16,6 +16,31 @@ function loadEnvFile(fileName) {
   }
 }
 
+function displayNameFromEmail(email) {
+  const local = email.trim().split("@")[0] || email.trim();
+  return local.split(/[._-]/).filter(Boolean)
+    .map((part) => part.charAt(0).toLocaleUpperCase("pt-BR") + part.slice(1).toLocaleLowerCase("pt-BR"))
+    .join(" ") || "Usuário";
+}
+
+function resolveUserDisplayName(bitrixUser, email, existingName) {
+  const parts = [bitrixUser?.NAME, bitrixUser?.SECOND_NAME, bitrixUser?.LAST_NAME]
+    .map((value) => String(value ?? "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const words = [];
+  for (const part of parts) {
+    const next = part.split(" ").filter(Boolean);
+    let overlap = Math.min(words.length, next.length);
+    while (overlap > 0 && words.slice(-overlap).join(" ").toLocaleLowerCase("pt-BR") !== next.slice(0, overlap).join(" ").toLocaleLowerCase("pt-BR")) overlap -= 1;
+    words.push(...next.slice(overlap));
+  }
+  const bitrixName = words.join(" ");
+  if (bitrixName) return bitrixName;
+  const current = String(existingName ?? "").replace(/\s+/g, " ").trim();
+  if (current && current.toLocaleLowerCase("pt-BR") !== email.toLocaleLowerCase("pt-BR")) return current;
+  return displayNameFromEmail(email);
+}
+
 loadEnvFile(".env.local");
 loadEnvFile(".env");
 
@@ -123,9 +148,9 @@ async function main() {
       const email = String(bitrixUser.EMAIL ?? "").trim().toLowerCase();
       if (!bitrixUserId || !email) continue;
 
-      const name = [bitrixUser.NAME, bitrixUser.LAST_NAME].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
       const profile = bitrixUserId === String(team.bitrix_head_user_id) ? "lider" : "corretor";
       let authUser = authByBitrixId.get(bitrixUserId) ?? authByEmail.get(email);
+      const name = resolveUserDisplayName(bitrixUser, email, authUser?.user_metadata?.nome);
 
       if (!authUser) {
         const { data, error } = await supabase.auth.admin.createUser({

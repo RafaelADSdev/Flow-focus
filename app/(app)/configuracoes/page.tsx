@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Route } from "next";
-import { ArrowRight, MapPinned, Shield, SlidersHorizontal } from "lucide-react";
+import { ArrowRight, MapPinned, Shield } from "lucide-react";
 import { isAdmin } from "@/lib/auth/require-admin";
 
 export const metadata = { title: "Configurações" };
@@ -19,13 +19,6 @@ const settingsLinks = [
     description: "Crie, edite ou desative acessos. Ajuste visão, páginas, esteira e equipe.",
     icon: Shield,
     adminOnly: true,
-  },
-  {
-    href: "/roletas",
-    title: "Permissões de roleta",
-    description: "Defina quais roletas cada corretor pode visualizar e captar.",
-    icon: SlidersHorizontal,
-    adminOnly: false,
   },
 ] as const;
 

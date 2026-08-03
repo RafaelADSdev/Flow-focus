@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   WifiOff,
 } from "lucide-react";
+import { BrandMark } from "@/components/brand-mark";
 import { isGeofenceProtectedPage } from "@/lib/geofence/routes";
 import { hasSupabaseEnv } from "@/lib/supabase/env";
 
@@ -43,6 +44,15 @@ type ValidationResponse = {
   renovarEmMs?: number;
   erro?: string;
 };
+
+function GeofenceMasthead() {
+  return (
+    <header className="geofence-masthead">
+      <BrandMark variant="on-dark" className="geofence-brand-logo" />
+      <span className="geofence-context">Controle de acesso</span>
+    </header>
+  );
+}
 
 type GeofenceGateProps = {
   children?: React.ReactNode;
@@ -122,13 +132,7 @@ function GateScreen({ status, onRetry }: { status: Exclude<GateStatus, "permitid
 
   return (
     <main className={`geofence-page geofence-page--${status}`}>
-      <header className="geofence-masthead">
-        <div className="geofence-brand" aria-label="Flow Focus">
-          <span className="geofence-brand-mark" aria-hidden="true">F</span>
-          <span><strong>Flow</strong> Focus</span>
-        </div>
-        <span className="geofence-context">Controle de acesso</span>
-      </header>
+      <GeofenceMasthead />
 
       <section className="geofence-stage" aria-live={isChecking ? "polite" : "assertive"}>
         <div className="geofence-panel" role={isChecking ? "status" : "alert"} aria-busy={isChecking}>
@@ -167,13 +171,7 @@ function GateScreen({ status, onRetry }: { status: Exclude<GateStatus, "permitid
 function RedirectingScreen() {
   return (
     <main className="geofence-page geofence-page--permitido" tabIndex={-1}>
-      <header className="geofence-masthead">
-        <div className="geofence-brand" aria-label="Flow Focus">
-          <span className="geofence-brand-mark" aria-hidden="true">F</span>
-          <span><strong>Flow</strong> Focus</span>
-        </div>
-        <span className="geofence-context">Controle de acesso</span>
-      </header>
+      <GeofenceMasthead />
       <section className="geofence-stage" aria-live="polite">
         <div className="geofence-panel geofence-panel--success" role="status">
           <div className="geofence-panel-band" aria-hidden="true" />

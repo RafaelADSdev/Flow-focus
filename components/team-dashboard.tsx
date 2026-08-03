@@ -9,6 +9,7 @@ import {
   ArrowDownWideNarrow,
   Ban,
   Calendar,
+  CheckCircle2,
   Filter,
   PauseCircle,
   RefreshCw,
@@ -20,15 +21,12 @@ import {
 } from "lucide-react";
 import { ExpiringLeadsDialog } from "@/components/expiring-leads-dialog";
 import { isLostStageName, TeamStageChart } from "@/components/team-stage-chart";
+import { UserAvatar } from "@/components/user-avatar";
 import { loadBrokerExemptions, loadTeamPipeline } from "@/lib/actions/equipe";
 import type { BrokerPipelineRow, ExpiringLeadsMode } from "@/lib/types/equipe";
 
 type BitrixFilter = "ativo" | "inativo" | "todos";
 const MONTH_NAMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-
-function initials(name: string) {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
-}
 
 function monthOptions() {
   const now = new Date();
@@ -190,12 +188,7 @@ function BrokerCard({
   return (
     <article className={`export-broker-card${!row.user.active ? " is-inactive" : ""}`}>
       <div className="export-broker-head">
-        <span className="export-broker-avatar">
-          {row.user.photo ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={row.user.photo} alt="" />
-          ) : initials(row.user.fullName)}
-        </span>
+        <UserAvatar name={row.user.fullName} photoUrl={row.user.photo} className="export-broker-avatar" />
         <div className="export-broker-copy">
           <div className="export-broker-name">
             <strong>{row.user.fullName}</strong>
@@ -215,13 +208,18 @@ function BrokerCard({
         <TeamStageChart
           compact
           criticalById={criticalById}
-          stages={pipelineStages.map((stage) => ({ id: stage.stageId, name: stage.name, count: stage.count }))}
+          stages={pipelineStages.map((stage) => ({
+            id: stage.stageId,
+            name: stage.name,
+            count: stage.count,
+            color: stage.color,
+          }))}
         />
         {lostStages.length ? <div className="export-lost-list">{lostStages.map((stage) => <LostStageTag key={stage.stageId} name={stage.name} count={stage.count} />)}</div> : null}
       </div>
       <footer>
         <div className="export-broker-footer-meta">
-          {row.criticos ? <span className="has-critical"><AlertTriangle size={14} aria-hidden="true" />{row.criticos} críticos</span> : <span>Sem críticos</span>}
+          {row.criticos ? <span className="has-critical"><AlertTriangle size={14} aria-hidden="true" />{row.criticos} críticos</span> : <span className="has-positive"><CheckCircle2 size={14} aria-hidden="true" />Sem críticos</span>}
           {row.quarentena ? <span className="has-quarantine"><PauseCircle size={14} aria-hidden="true" />{row.quarentena} em quarentena</span> : null}
         </div>
         <div className="export-broker-footer-actions">
@@ -420,11 +418,16 @@ export function TeamDashboard() {
 
         <section className="export-card export-stage-card">
           <header><h2>Distribuição por etapa · {department === "__all__" ? "equipe completa" : department}</h2>{query.isFetching ? <span><RefreshCw className="is-spinning" size={12} aria-hidden="true" />Atualizando gráfico…</span> : null}</header>
+          <div className="export-semantic-legend" role="list" aria-label="Padrão de cores dos estados">
+            <span className="is-positive" role="listitem"><i aria-hidden="true" />Positivo</span>
+            <span className="is-warning" role="listitem"><i aria-hidden="true" />Alerta</span>
+            <span className="is-negative" role="listitem"><i aria-hidden="true" />Negativo</span>
+          </div>
           <p className="export-stage-legend">
             <span className="export-legend-swatch is-critical" aria-hidden="true" />
-            Vermelho = leads críticos na etapa · mais de 2 dias sem movimentação ou EM ANDAMENTO com Prazo Padrão em até 7 dias (somente com Roleta Atual).
+            Barras = cores das etapas no Comercial Geral · número e marca em coral = leads críticos, com mais de 2 dias sem movimentação ou EM ANDAMENTO com Prazo Padrão em até 7 dias (somente com Roleta Atual).
           </p>
-          <TeamStageChart criticalById={aggregates.critical} stages={stages.filter((stage) => !isLostStageName(stage.name)).map((stage) => ({ id: stage.id, name: stage.name, count: aggregates.totals[stage.id] ?? 0 }))} />
+          <TeamStageChart criticalById={aggregates.critical} stages={stages.filter((stage) => !isLostStageName(stage.name)).map((stage) => ({ id: stage.id, name: stage.name, count: aggregates.totals[stage.id] ?? 0, color: stage.color }))} />
           <div className="export-lost-list">{stages.filter((stage) => isLostStageName(stage.name)).map((stage) => <LostStageTag key={stage.id} name={stage.name} count={aggregates.totals[stage.id] ?? 0} />)}</div>
         </section>
 

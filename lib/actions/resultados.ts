@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getViewerContext } from "@/lib/auth/viewer-context";
 import { canViewResultados } from "@/lib/auth/perfil";
 import { refreshCapturedDealsForCorretores } from "@/lib/bitrix/refresh-captured-deals";
+import { syncBitrixUserPhotos } from "@/lib/bitrix/sync-user-photos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseSecretKey } from "@/lib/supabase/env";
 
@@ -23,7 +24,10 @@ export async function sincronizarResultadosBitrix() {
     .eq("perfil", "corretor");
   if (error) return { ok: false as const, error: error.message };
 
-  await refreshCapturedDealsForCorretores((data ?? []).map((item) => item.id));
+  await Promise.all([
+    refreshCapturedDealsForCorretores((data ?? []).map((item) => item.id)),
+    syncBitrixUserPhotos(),
+  ]);
   revalidatePath("/resultados");
   revalidatePath("/auditorias");
   revalidatePath("/corretor");

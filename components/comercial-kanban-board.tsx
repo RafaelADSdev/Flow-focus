@@ -61,8 +61,9 @@ type PendingConfirm =
 const UNDO_MS = 8_000;
 
 function stageAccent(stage: ComercialKanbanStage) {
-  if (stage.semantics === "S") return "oklch(0.55 0.13 155)";
-  if (stage.semantics === "F") return "oklch(0.56 0.19 28)";
+  if (stage.color) return stage.color;
+  if (stage.semantics === "S") return "var(--success)";
+  if (stage.semantics === "F") return "var(--danger)";
   return "var(--line)";
 }
 

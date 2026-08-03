@@ -18,12 +18,15 @@ colors:
   dark-hover: "#2B2130"
   dark-line: "#2F2A31"
   on-dark-muted: "#D4D4D4"
-  success: "oklch(0.55 0.13 155)"
-  success-soft: "oklch(0.94 0.04 155)"
-  warning: "oklch(0.67 0.14 75)"
-  warning-soft: "oklch(0.95 0.04 75)"
-  danger: "oklch(0.56 0.19 28)"
-  danger-soft: "oklch(0.95 0.035 28)"
+  success: "oklch(0.72 0.18 145)"
+  success-soft: "oklch(0.95 0.04 145)"
+  success-ink: "oklch(0.34 0.11 145)"
+  warning: "oklch(0.66 0.17 65)"
+  warning-soft: "oklch(0.96 0.035 75)"
+  warning-ink: "oklch(0.4 0.11 60)"
+  danger: "oklch(0.7 0.16 20)"
+  danger-soft: "oklch(0.95 0.045 20)"
+  danger-ink: "oklch(0.4 0.14 24)"
 typography:
   display:
     fontFamily: "\"Plus Jakarta Sans\", system-ui, sans-serif"
@@ -85,7 +88,7 @@ components:
     height: "40px"
   status-success:
     backgroundColor: "{colors.success-soft}"
-    textColor: "oklch(0.36 0.12 155)"
+    textColor: "{colors.success-ink}"
     rounded: "{rounded.pill}"
     padding: "5px 8px"
 ---
@@ -132,9 +135,10 @@ Paleta oficial preta, branca e roxa; semáforo discreto e independente para stat
 
 ### Status
 
-- **Sucesso** / **Sucesso Suave** — aprovações, capturas concluídas.
-- **Alerta** / **Alerta Suave** — pendências, filas de auditoria.
-- **Perigo** / **Perigo Suave** — bloqueios, reprovações, erros de formulário.
+- **Positivo** — verde vivo sobre verde suave para aprovações, capturas concluídas e estados saudáveis.
+- **Alerta / Bronze** — laranja bronze sobre creme suave para pendências, quarentena e filas de auditoria.
+- **Negativo** — coral sobre rosa suave para bloqueios, críticos, perdas, reprovações e erros.
+- Texto usa sempre o token `*-ink` da mesma família; ícone, rótulo ou forma acompanha a cor para o estado nunca depender apenas do matiz.
 
 ### Named Rules
 

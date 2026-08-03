@@ -47,7 +47,7 @@ As telas operacionais restantes ainda usam dados demonstrativos; o dashboard de 
 
 - O limite diario padrao e 6 e permanece um teto por dia. Aprovar uma auditoria remove o bloqueio e habilita o proximo lote quando ainda houver capacidade no dia ou no inicio do proximo dia; nao eleva silenciosamente o teto diario.
 - A importacao do Bitrix24 aceita somente negocios da categoria `36`, etapa `C36:NEW` ("Nova entrada") e cujo campo `UF_CRM_1726667595972` ("Roleta Atual") contenha a tag `Focus` em qualquer posicao.
-- O sync do Bolsão pagina pelo cursor `next` do Bitrix (não só por `total/50`) e reporta também o total Focus na category (qualquer etapa) para comparar com o Focus Analytics.
+- O sync do Bolsão pagina por ID crescente com `start=-1`, evitando que o Bitrix recalcule o total em cada página, e reporta também o total Focus na category (qualquer etapa) para comparar com o Focus Analytics.
 - Cada valor distinto de "Roleta Atual" gera sua propria roleta (chave canonica: minusculo, sem acento e sem espacos nas pontas), em vez de um bolsão monolítico. `oportunidades.roleta_atual` guarda o valor original do Bitrix para rastreabilidade, e `roletas.bitrix_roleta_valor` guarda a chave canonica usada para casar novas oportunidades com a roleta certa.
 - A URL em `BITRIX24_BASE_URL` inclui o caminho autenticado do webhook outbound quando necessario, por exemplo `https://conta.bitrix24.com.br/rest/usuario/token`.
 - Horarios de negocio e o `current_date` do limite seguem o timezone configurado no Postgres. Configure o projeto Supabase para `America/Sao_Paulo` antes da producao.

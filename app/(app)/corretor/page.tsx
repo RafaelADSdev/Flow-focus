@@ -5,6 +5,7 @@ import { getBitrixPortalBaseUrl } from "@/lib/bitrix/portal";
 import { getCarteiraData } from "@/lib/data/carteira";
 
 export const metadata = { title: "Minha carteira" };
+export const maxDuration = 60;
 
 export default async function BrokerPage() {
   const carteira = await getCarteiraData();

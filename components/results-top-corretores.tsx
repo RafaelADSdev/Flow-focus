@@ -1,15 +1,7 @@
 "use client";
 
 import type { ResultadoTopCorretor } from "@/lib/types/resultados";
-
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-}
+import { UserAvatar } from "@/components/user-avatar";
 
 export function ResultsTopCorretores({ brokers }: { brokers: ResultadoTopCorretor[] }) {
   if (!brokers.length) {
@@ -21,14 +13,7 @@ export function ResultsTopCorretores({ brokers }: { brokers: ResultadoTopCorreto
       {brokers.map((broker, index) => (
         <li key={broker.corretorId} className="results-top-broker">
           <span className="results-top-rank" aria-hidden>{index + 1}</span>
-          <span className="export-broker-avatar">
-            {broker.fotoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={broker.fotoUrl} alt="" />
-            ) : (
-              initials(broker.corretor)
-            )}
-          </span>
+          <UserAvatar name={broker.corretor} photoUrl={broker.fotoUrl} className="export-broker-avatar" />
           <div className="results-top-copy">
             <strong>{broker.corretor}</strong>
             <span>{broker.equipe}</span>

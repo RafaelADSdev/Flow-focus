@@ -31,7 +31,7 @@ export function TeamStageChart({
   criticalById,
   compact = false,
 }: {
-  stages: Array<{ id: string; name: string; count: number }>;
+  stages: Array<{ id: string; name: string; count: number; color?: string | null }>;
   criticalById?: Record<string, number>;
   compact?: boolean;
 }) {
@@ -50,7 +50,7 @@ export function TeamStageChart({
       {stages.map((stage, index) => {
         const critical = criticalById?.[stage.id] ?? 0;
         const hasCritical = critical > 0;
-        const barColor = hasCritical ? "var(--danger)" : stageBarColor(stage.name, index);
+        const barColor = stage.color ?? stageBarColor(stage.name, index);
         const style = {
           "--stage-size": `${Math.max(stage.count ? 5 : 1, Math.round((stage.count / maximum) * 100))}%`,
           "--stage-bar": barColor,

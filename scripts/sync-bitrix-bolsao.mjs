@@ -90,17 +90,25 @@ async function bitrixPage(filters, start = 0) {
 
 async function fetchAll(filters) {
   const deals = [];
-  let start = 0;
-  let reportedTotal = null;
-  while (start !== undefined) {
-    const page = await bitrixPage(filters, start);
-    if (reportedTotal === null && typeof page.total === "number") reportedTotal = page.total;
+  let lastId = "0";
+  while (true) {
+    const page = await bitrixPage({
+      ...filters,
+      "filter[>ID]": lastId,
+      "order[ID]": "ASC",
+    }, -1);
+    if (!page.result.length) break;
     deals.push(...page.result);
-    start = typeof page.next === "number" ? page.next : undefined;
-    process.stdout.write(`\r  páginas: ${deals.length}${reportedTotal != null ? ` / ~${reportedTotal}` : ""}   `);
+    const nextLastId = String(page.result.at(-1)?.ID ?? "");
+    if (!/^\d+$/.test(nextLastId) || BigInt(nextLastId) <= BigInt(lastId)) {
+      throw new Error("A paginação do Bitrix não avançou para o próximo ID.");
+    }
+    lastId = nextLastId;
+    process.stdout.write(`\r  negócios: ${deals.length}   `);
+    if (page.result.length < 50) break;
   }
   process.stdout.write("\n");
-  return { deals, reportedTotal };
+  return { deals, reportedTotal: null };
 }
 
 async function countOnly(filters) {
@@ -125,7 +133,7 @@ async function main() {
   });
   console.log(`Bitrix Focus + ${stageId} (total reportado): ${focusNewReported}`);
 
-  console.log("Buscando todos os deals elegíveis (cursor next)...");
+  console.log("Buscando todos os deals elegíveis (ID crescente + start=-1)...");
   const { deals, reportedTotal } = await fetchAll({
     "filter[CATEGORY_ID]": categoryId,
     "filter[STAGE_ID]": stageId,

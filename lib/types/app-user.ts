@@ -6,5 +6,6 @@ export type AppUser = {
   perfil: PerfilUsuario;
   equipeNome: string | null;
   iniciais: string;
+  fotoUrl: string | null;
   paginasAcesso: PaginaAcesso[];
 };

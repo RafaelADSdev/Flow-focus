@@ -15,6 +15,7 @@ export function getFallbackUser(): AppUser {
     perfil: "corretor",
     equipeNome: null,
     iniciais: "US",
+    fotoUrl: null,
     paginasAcesso: defaultPaginasForPerfil("corretor"),
   };
 }
@@ -35,6 +36,7 @@ export async function getCurrentUser(): Promise<AppUser> {
     perfil: profile.perfil,
     equipeNome: profile.equipeNome,
     iniciais: initials(profile.nome),
+    fotoUrl: profile.fotoUrl,
     paginasAcesso: profile.paginasAcesso,
   };
 }

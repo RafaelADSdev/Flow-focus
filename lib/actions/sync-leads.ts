@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hasSupabaseSecretKey } from "@/lib/supabase/env";
 
 export type SyncLeadsResult =
-  | { ok: true; summary: BitrixDealsSyncSummary; comercialGeral: ComercialGeralSyncSummary; syncedAt: string }
+  | { ok: true; summary: BitrixDealsSyncSummary; syncedAt: string }
   | { ok: false; error: string };
 
 export type SyncComercialGeralResult =
@@ -71,18 +71,31 @@ export async function sincronizarLeadsBitrix(): Promise<SyncLeadsResult> {
     return { ok: false, error: "BITRIX24_BASE_URL não configurada no servidor." };
   }
 
+  const startedAt = Date.now();
+  console.info("[sync-leads] started", { source: "broker-wallet" });
+
   try {
-    const [summary, comercialGeral] = await Promise.all([
-      syncBitrixDeals(),
-      syncComercialGeralDeals(),
-    ]);
+    const summary = await syncBitrixDeals();
+    const syncedAt = new Date().toISOString();
     revalidatePath("/corretor");
     revalidatePath("/dashboard");
     revalidatePath("/roletas");
-    revalidatePath("/comercial-geral");
-    return { ok: true, summary, comercialGeral, syncedAt: new Date().toISOString() };
+    console.info("[sync-leads] completed", {
+      durationMs: Date.now() - startedAt,
+      encontrados: summary.encontrados,
+      importados: summary.importados,
+      removidosDaFila: summary.removidosDaFila,
+      roletas: summary.roletas,
+    });
+    return { ok: true, summary, syncedAt };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível sincronizar os leads.";
+    console.error("[sync-leads] failed", {
+      durationMs: Date.now() - startedAt,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      errorMessage: message,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return { ok: false, error: message };
   }
 }

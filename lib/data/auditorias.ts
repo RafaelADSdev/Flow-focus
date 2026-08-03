@@ -3,6 +3,7 @@ import "server-only";
 import { fetchBitrixDealStages, stripStageSemanticSuffix } from "@/lib/bitrix/deal-stages";
 import { refreshCapturedDealsForCorretores } from "@/lib/bitrix/refresh-captured-deals";
 import { canManageOperacao, getViewerContext, type ViewerContext } from "@/lib/auth/viewer-context";
+import { isCapturaDoSistema, partitionRoletas } from "@/lib/data/captura-sistema";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseEnv, hasSupabaseSecretKey } from "@/lib/supabase/env";
 import type { AuditoriaFilaItem, AuditoriasPainelData } from "@/lib/types/auditorias";
@@ -27,9 +28,11 @@ type UsuarioRow = {
 type OportunidadeAuditoriaRow = {
   id: string;
   bitrix_deal_id: string;
+  roleta_id: string;
   corretor_id: string;
   titulo: string | null;
   captada_em: string;
+  data_criacao_bitrix: string | null;
   bitrix_stage_id: string | null;
   ultima_atualizacao_bitrix: string | null;
   tentativa_contato_ok: boolean;
@@ -115,18 +118,27 @@ export async function ensurePendingAuditoriaForCorretor(
   if (error && !error.message.toLowerCase().includes("duplicate")) throw new Error(error.message);
 }
 
-async function ensurePendingAuditorias(admin: ReturnType<typeof createAdminClient>) {
+async function ensurePendingAuditorias(
+  admin: ReturnType<typeof createAdminClient>,
+  capturaRoletaIds: Set<string>,
+  comercialGeralRoletaIds: Set<string>,
+) {
   const { data, error } = await admin
     .from("oportunidades")
-    .select("corretor_id")
+    .select("id, corretor_id, roleta_id, captada_em, data_criacao_bitrix")
     .not("corretor_id", "is", null)
     .not("captada_em", "is", null)
     .is("auditoria_aprovada_em", null);
   if (error) throw new Error(error.message);
 
-  const ids = [...new Set((data ?? []).map((item) => item.corretor_id).filter(Boolean))] as string[];
-  for (const corretorId of ids) await ensurePendingAuditoriaForCorretor(admin, corretorId);
-  return ids;
+  const pendingSystemCaptures = (data ?? [])
+    .filter((item) => isCapturaDoSistema(item, capturaRoletaIds, comercialGeralRoletaIds));
+  const brokerIds = [...new Set(pendingSystemCaptures.map((item) => item.corretor_id).filter(Boolean))] as string[];
+  for (const corretorId of brokerIds) await ensurePendingAuditoriaForCorretor(admin, corretorId);
+  return {
+    brokerIds,
+    opportunityIds: pendingSystemCaptures.map((item) => item.id),
+  };
 }
 
 function averageHours(items: Array<{ captada_em: string; auditoria_aprovada_em: string | null }>) {
@@ -140,8 +152,17 @@ function averageHours(items: Array<{ captada_em: string; auditoria_aprovada_em: 
 
 async function loadAuditoriasFromTables(viewer: ViewerContext): Promise<AuditoriasPainelData> {
   const admin = createAdminClient();
-  const activeBrokerIds = await ensurePendingAuditorias(admin);
-  await refreshCapturedDealsForCorretores(activeBrokerIds, { onlyPendingAudit: true });
+  const { data: roletas, error: roletasError } = await admin
+    .from("roletas")
+    .select("id, nome, bitrix_funil_id, bitrix_category_id");
+  if (roletasError) throw new Error(roletasError.message);
+
+  const { capturaRoletaIds, comercialGeralRoletaIds } = partitionRoletas(roletas ?? []);
+  const pendingCaptures = await ensurePendingAuditorias(admin, capturaRoletaIds, comercialGeralRoletaIds);
+  await refreshCapturedDealsForCorretores(pendingCaptures.brokerIds, {
+    onlyPendingAudit: true,
+    opportunityIds: pendingCaptures.opportunityIds,
+  });
 
   const [usuariosResult, bloqueiosResult, auditoriasResult, oportunidadesResult, stages] = await Promise.all([
     admin.from("usuarios").select("id, nome, equipe_id, equipe_nome").eq("ativo", true).eq("perfil", "corretor"),
@@ -149,7 +170,7 @@ async function loadAuditoriasFromTables(viewer: ViewerContext): Promise<Auditori
     admin.from("auditorias").select("id, corretor_id, status, data, concluida_em"),
     admin
       .from("oportunidades")
-      .select("id, bitrix_deal_id, corretor_id, titulo, captada_em, bitrix_stage_id, ultima_atualizacao_bitrix, tentativa_contato_ok, comentario_bitrix_ok, etapa_atualizada_ok, auditoria_aprovada_em")
+      .select("id, bitrix_deal_id, roleta_id, corretor_id, titulo, captada_em, data_criacao_bitrix, bitrix_stage_id, ultima_atualizacao_bitrix, tentativa_contato_ok, comentario_bitrix_ok, etapa_atualizada_ok, auditoria_aprovada_em")
       .not("corretor_id", "is", null)
       .not("captada_em", "is", null),
     fetchBitrixDealStages(process.env.BITRIX24_CAPTURE_CATEGORY_ID ?? "16").catch(() => []),
@@ -166,7 +187,8 @@ async function loadAuditoriasFromTables(viewer: ViewerContext): Promise<Auditori
       .map((item) => [item.id, item]),
   );
   const auditorias = (auditoriasResult.data ?? []) as AuditoriaRow[];
-  const oportunidades = (oportunidadesResult.data ?? []) as OportunidadeAuditoriaRow[];
+  const oportunidades = ((oportunidadesResult.data ?? []) as OportunidadeAuditoriaRow[])
+    .filter((item) => isCapturaDoSistema(item, capturaRoletaIds, comercialGeralRoletaIds));
   const active = oportunidades.filter((item) => !item.auditoria_aprovada_em && usuarios.has(item.corretor_id));
   const stageNames = new Map(stages.map((stage) => [stage.id, stage.name]));
   const pendingAuditByBroker = new Map(
@@ -191,7 +213,7 @@ async function loadAuditoriasFromTables(viewer: ViewerContext): Promise<Auditori
   for (const [corretorId, usuario] of usuarios) {
     const sortedLeads = [...(activeByBroker.get(corretorId) ?? [])].sort((a, b) => a.captada_em.localeCompare(b.captada_em));
     const hasPendingLeads = sortedLeads.length > 0;
-    if (!hasPendingLeads && !lastCaptureByBroker.has(corretorId) && !pendingAuditByBroker.has(corretorId)) continue;
+    if (!hasPendingLeads) continue;
 
     let auditoria = pendingAuditByBroker.get(corretorId);
     if (hasPendingLeads && !auditoria) {

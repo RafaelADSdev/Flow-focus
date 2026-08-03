@@ -2,6 +2,7 @@ import "server-only";
 
 import { cached, invalidateCachePrefix, mapLimit } from "@/lib/bitrix/cache";
 import { bitrixCallPage } from "@/lib/bitrix/client";
+import { normalizeBitrixStageColor } from "@/lib/bitrix/stage-color";
 import type {
   BitrixTeamUser,
   BrokerPipelineRow,
@@ -14,7 +15,6 @@ import type {
 const PIPELINE_NAME = "Comercial - GERAL";
 import {
   assessCriticalDeal,
-  DAY_MS,
   criticalDeadlineSource,
   isDealQuarantineStatus,
   isDueRdStationLead,
@@ -54,7 +54,7 @@ type RawBitrixUser = {
 
 type Department = { id: number; name: string; parent: number | null };
 type RawDepartment = { ID: number | string; NAME: string; PARENT?: number | string | null };
-type RawStage = { STATUS_ID: string; NAME: string; SORT?: number | string };
+type RawStage = { STATUS_ID: string; NAME: string; SORT?: number | string; COLOR?: string | null };
 
 function params(entries: Record<string, string>) {
   return new URLSearchParams(entries);
@@ -243,7 +243,11 @@ async function getPipelineStages(categoryId: string) {
     }
     return result
       .sort((a, b) => Number(a.SORT ?? 0) - Number(b.SORT ?? 0))
-      .map((stage) => ({ id: stage.STATUS_ID, name: stage.NAME }));
+      .map((stage) => ({
+        id: stage.STATUS_ID,
+        name: stage.NAME,
+        color: normalizeBitrixStageColor(stage.COLOR),
+      }));
   });
 }
 
@@ -419,6 +423,7 @@ async function buildTeamPipeline(
         name: stage.name,
         count: counts[stage.id] ?? 0,
         criticos: criticalCounts[stage.id] ?? 0,
+        color: stage.color,
       })),
     });
   }

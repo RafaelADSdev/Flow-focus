@@ -2,6 +2,7 @@ import "server-only";
 
 import { bitrixCallPage, hasBitrixEnv } from "@/lib/bitrix/client";
 import { getBolsaoSyncDefaults } from "@/lib/bitrix/bolsao-roleta";
+import { collectBitrixPagesById } from "@/lib/bitrix/keyset-pagination";
 import { upsertBolsaoRoletasBatch } from "@/lib/bitrix/upsert-bolsao-roleta";
 import type { StatusOportunidade } from "@/lib/database.types";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -93,25 +94,21 @@ async function fetchDealPage(
   return bitrixCallPage<JsonRecord[]>("crm.deal.list", params, 30_000);
 }
 
-/** Percorre todas as páginas pelo cursor `next` do Bitrix (não confia só em total/50). */
+/** Percorre todas as páginas por ID, sem recalcular o total em cada chamada. */
 async function fetchAllPages(
   config: ReturnType<typeof getSyncConfig>,
   filters: Record<string, string>,
 ) {
-  const deals: JsonRecord[] = [];
-  let start: number | undefined = 0;
-  let reportedTotal: number | null = null;
+  const deals = await collectBitrixPagesById(async (lastId) => {
+    const page = await fetchDealPage(-1, config, {
+      ...filters,
+      "filter[>ID]": lastId,
+      "order[ID]": "ASC",
+    });
+    return page.result;
+  });
 
-  while (start !== undefined) {
-    const page = await fetchDealPage(start, config, filters);
-    if (reportedTotal === null && typeof page.total === "number") {
-      reportedTotal = page.total;
-    }
-    deals.push(...page.result);
-    start = typeof page.next === "number" ? page.next : undefined;
-  }
-
-  return { deals, reportedTotal };
+  return { deals, reportedTotal: null };
 }
 
 async function countFocusInCategory(config: ReturnType<typeof getSyncConfig>) {
@@ -248,7 +245,14 @@ async function runSyncBitrixDeals(): Promise<BitrixDealsSyncSummary> {
   await Promise.all(chunks(opportunities, 250).map(async (batch) => {
     let { error } = await admin.from("oportunidades").upsert(batch, { onConflict: "bitrix_deal_id" });
     if (error?.message.includes("status") || error?.message.includes("bitrix_assigned") || error?.message.includes("roleta_atual")) {
-      const slim = batch.map(({ status: _status, bitrix_assigned_by_id: _assigned, roleta_atual: _roleta, ...rest }) => rest);
+      const slim = batch.map((row) => ({
+        bitrix_deal_id: row.bitrix_deal_id,
+        roleta_id: row.roleta_id,
+        titulo: row.titulo,
+        valor: row.valor,
+        data_criacao_bitrix: row.data_criacao_bitrix,
+        ultima_atualizacao_bitrix: row.ultima_atualizacao_bitrix,
+      }));
       ({ error } = await admin.from("oportunidades").upsert(slim, { onConflict: "bitrix_deal_id" }));
     }
     if (error) throw error;

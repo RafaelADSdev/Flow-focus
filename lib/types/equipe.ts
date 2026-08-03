@@ -16,6 +16,7 @@ export type TeamStageBucket = {
   name: string;
   count: number;
   criticos: number;
+  color: string | null;
 };
 
 export type BrokerPipelineRow = {
@@ -39,7 +40,7 @@ export type TeamPipeline = {
   departments: { id: number; name: string }[];
   teams: { id: number; name: string; count: number }[];
   members: BitrixTeamUser[];
-  stages: { id: string; name: string }[];
+  stages: { id: string; name: string; color: string | null }[];
   rows: BrokerPipelineRow[];
   totals: {
     totalDeals: number;
