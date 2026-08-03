@@ -3,6 +3,7 @@ import "server-only";
 import { fetchBitrixDealStages, stripStageSemanticSuffix } from "@/lib/bitrix/deal-stages";
 import { refreshCapturedDealsForCorretores } from "@/lib/bitrix/refresh-captured-deals";
 import { canManageOperacao, getViewerContext, type ViewerContext } from "@/lib/auth/viewer-context";
+import { isContaDemonstracao } from "@/lib/auth/conta-demonstracao";
 import { filterCapturasConfirmadasDoSistema, partitionRoletas } from "@/lib/data/captura-sistema";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseEnv, hasSupabaseSecretKey } from "@/lib/supabase/env";
@@ -138,11 +139,25 @@ async function ensurePendingAuditorias(
     comercialGeralRoletaIds,
     capturasDiarias,
   );
-  const brokerIds = [...new Set(pendingSystemCaptures.map((item) => item.corretor_id).filter(Boolean))] as string[];
-  for (const corretorId of brokerIds) await ensurePendingAuditoriaForCorretor(admin, corretorId);
+  const brokerIds = [...new Set(
+    pendingSystemCaptures
+      .map((item) => item.corretor_id)
+      .filter(Boolean),
+  )] as string[];
+
+  const { data: brokerProfiles } = brokerIds.length
+    ? await admin.from("usuarios").select("id, nome, email").in("id", brokerIds)
+    : { data: [] as Array<{ id: string; nome: string; email: string }> };
+  const operationalBrokerIds = (brokerProfiles ?? [])
+    .filter((broker) => !isContaDemonstracao(broker))
+    .map((broker) => broker.id);
+
+  for (const corretorId of operationalBrokerIds) await ensurePendingAuditoriaForCorretor(admin, corretorId);
   return {
-    brokerIds,
-    opportunityIds: pendingSystemCaptures.map((item) => item.id),
+    brokerIds: operationalBrokerIds,
+    opportunityIds: pendingSystemCaptures
+      .filter((item) => item.corretor_id && operationalBrokerIds.includes(item.corretor_id))
+      .map((item) => item.id),
   };
 }
 
@@ -198,6 +213,7 @@ async function loadAuditoriasFromTables(viewer: ViewerContext): Promise<Auditori
 
   const usuarios = new Map(
     ((usuariosResult.data ?? []) as UsuarioRow[])
+      .filter((item) => !isContaDemonstracao(item))
       .filter((item) => inViewerScope(viewer, item.equipe_id))
       .map((item) => [item.id, item]),
   );

@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { getViewerContext } from "@/lib/auth/viewer-context";
 import { canViewResultados } from "@/lib/auth/perfil";
+import { hasBitrixEnv } from "@/lib/bitrix/client";
 import { refreshCapturedDealsForCorretores } from "@/lib/bitrix/refresh-captured-deals";
+import { syncBitrixPeople } from "@/lib/bitrix/sync-people";
 import { syncBitrixUserPhotos } from "@/lib/bitrix/sync-user-photos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseSecretKey } from "@/lib/supabase/env";
@@ -27,9 +29,12 @@ export async function sincronizarResultadosBitrix() {
   await Promise.all([
     refreshCapturedDealsForCorretores((data ?? []).map((item) => item.id)),
     syncBitrixUserPhotos(),
+    hasBitrixEnv() ? syncBitrixPeople() : Promise.resolve(),
   ]);
   revalidatePath("/resultados");
   revalidatePath("/auditorias");
   revalidatePath("/corretor");
+  revalidatePath("/equipe");
+  revalidatePath("/configuracoes/acesso");
   return { ok: true as const, syncedAt: new Date().toISOString() };
 }

@@ -11,6 +11,7 @@ import { fetchQuarantineDeals, type QuarantineDeal } from "@/lib/bitrix/fetch-qu
 import { fetchBitrixUserPhotos } from "@/lib/bitrix/fetch-user-photos";
 import { getViewerContext, type ViewerContext } from "@/lib/auth/viewer-context";
 import { canViewResultados } from "@/lib/auth/perfil";
+import { isContaDemonstracao } from "@/lib/auth/conta-demonstracao";
 import type { StatusOportunidade } from "@/lib/database.types";
 import { getBitrixCaptureTarget } from "@/lib/bitrix/capture-target";
 import { filterCapturasConfirmadasDoSistema, isCapturaDoSistema, partitionRoletas } from "@/lib/data/captura-sistema";
@@ -243,6 +244,7 @@ function resolveStageName(
 type UserRow = {
   id: string;
   nome: string;
+  email: string;
   equipe_id: string | null;
   equipe_nome: string | null;
   perfil: string;
@@ -323,7 +325,7 @@ export async function getResultadosData(): Promise<ResultadosData> {
 
   const admin = createAdminClient();
   const [usersResult, roletas, brokerRoletaPairs, capturedOpportunities, capturasDiariasResult] = await Promise.all([
-    admin.from("usuarios").select("id, nome, equipe_id, equipe_nome, perfil, foto_url, bitrix_user_id").eq("ativo", true).eq("perfil", "corretor"),
+    admin.from("usuarios").select("id, nome, email, equipe_id, equipe_nome, perfil, foto_url, bitrix_user_id").eq("ativo", true).eq("perfil", "corretor"),
     listRoletas(admin),
     listBrokerRoletaPairs(admin),
     listCapturedOpportunities(admin),
@@ -337,6 +339,7 @@ export async function getResultadosData(): Promise<ResultadosData> {
 
   const users = new Map(
     (usersResult.data ?? [])
+      .filter((user) => !isContaDemonstracao(user))
       .filter((user) => inScope(viewer, user))
       .map((user) => [user.id, user]),
   );

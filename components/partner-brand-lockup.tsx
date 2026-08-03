@@ -8,7 +8,7 @@ type PartnerBrandLockupProps = {
 };
 
 const FLOW = {
-  "on-light": "/brand/logo-claro-v2.png?v=3",
+  "on-light": "/brand/logo-claro-v2.png",
   "on-dark": "/brand/logo-escuro.png",
 } as const;
 
