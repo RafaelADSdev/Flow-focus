@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { captarOportunidade } from "@/lib/actions/captura";
 import { sincronizarLeadsBitrix } from "@/lib/actions/sync-leads";
+import { createClient } from "@/lib/supabase/client";
 import type { CarteiraData } from "@/lib/types/carteira";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { StatusBadge } from "./status-badge";
@@ -240,6 +241,15 @@ export function BrokerPanel({
       syncingRef.current = false;
       setSyncing(false);
     }
+  }, [refreshData]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("flow-focus-carteira-permissoes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "roletas_corretor" }, refreshData)
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
   }, [refreshData]);
 
   useEffect(() => {

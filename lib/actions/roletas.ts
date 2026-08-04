@@ -278,6 +278,7 @@ export async function salvarPermissoesRoletas(input: unknown): Promise<ActionRes
   };
 
   revalidatePath("/roletas");
+  revalidatePath("/corretor");
   return {
     ok: true,
     receipt,

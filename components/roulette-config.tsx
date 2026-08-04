@@ -378,6 +378,7 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
       setReceipt(result.receipt);
       setAuditWarning(result.auditWarning ?? "");
       setReplicationContext(null);
+      router.refresh();
     });
   }
 
