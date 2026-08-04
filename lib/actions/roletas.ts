@@ -7,6 +7,7 @@ import { hasBitrixEnv } from "@/lib/bitrix/client";
 import { getBolsaoSyncDefaults } from "@/lib/bitrix/bolsao-roleta";
 import { syncBitrixDeals } from "@/lib/bitrix/sync-deals";
 import { reconcileBolsaoRoletas } from "@/lib/bitrix/upsert-bolsao-roleta";
+import { getUnavailableRoletaFailure } from "@/lib/roletas/config-state";
 import { diffRoletaIds, sameRoletaIds } from "@/lib/roletas/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseSecretKey } from "@/lib/supabase/env";
@@ -155,16 +156,8 @@ export async function salvarPermissoesRoletas(input: unknown): Promise<ActionRes
   }
 
   const roletaIdsGerenciaveis = new Set((roletasGerenciaveis ?? []).map((roleta) => roleta.id));
-  for (const atribuicao of parsed.data.atribuicoes) {
-    const idsRecebidos = [...atribuicao.roletaIds, ...atribuicao.roletaIdsAntes];
-    if (idsRecebidos.some((id) => !roletaIdsGerenciaveis.has(id))) {
-      return {
-        ok: false,
-        code: "validation",
-        error: "Uma das roletas mudou ou deixou de estar disponível. Atualize a página antes de salvar.",
-      };
-    }
-  }
+  const unavailableRoletaFailure = getUnavailableRoletaFailure(parsed.data.atribuicoes, roletaIdsGerenciaveis);
+  if (unavailableRoletaFailure) return unavailableRoletaFailure;
 
   const atuaisQuery = admin
     .from("roletas_corretor")

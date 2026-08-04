@@ -288,11 +288,7 @@ async function loadRoletasConfigFromTables(viewer: ViewerContext): Promise<Rolet
     viewer.perfil === "lider" ? new Set(corretores.map((corretor) => corretor.id)) : null,
   );
 
-  const excludedRoletaIds = new Set(
-    (roletasResult.data ?? [])
-      .filter((roleta) => !isRoletaCaptura(roleta))
-      .map((roleta) => roleta.id),
-  );
+  const manageableRoletaIds = new Set(roletasCaptura.map((roleta) => roleta.id));
 
   const parsed = configSchema.parse({
     equipe_nome: equipeNome,
@@ -307,7 +303,7 @@ async function loadRoletasConfigFromTables(viewer: ViewerContext): Promise<Rolet
       nome: corretor.nome,
       email: corretor.email,
       equipeNome: corretor.equipe_nome,
-      roletas: (roletasPorCorretor.get(corretor.id) ?? []).filter((roletaId) => !excludedRoletaIds.has(roletaId)),
+      roletas: (roletasPorCorretor.get(corretor.id) ?? []).filter((roletaId) => manageableRoletaIds.has(roletaId)),
       status: bloqueados.has(corretor.id)
         ? "bloqueado"
         : emAuditoria.has(corretor.id)

@@ -2,8 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type RefObject } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronDown, Copy, Filter, RefreshCw, Search, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Copy,
+  Filter,
+  Pencil,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { salvarPermissoesRoletas, sincronizarBolsaoBitrix } from "@/lib/actions/roletas";
+import { isRoletaRefreshRequired, summarizeRoletaDraft } from "@/lib/roletas/config-state";
 import { sameRoletaIds } from "@/lib/roletas/permissions";
 import type { RoletasConfigCorretor, RoletasConfigData, RoletasPermissionReceipt } from "@/lib/types/roletas";
 import { hasSupabaseEnv } from "@/lib/supabase/env";
@@ -114,6 +127,7 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
   const [auditWarning, setAuditWarning] = useState("");
   const [saving, startSaving] = useTransition();
   const [syncing, startSyncing] = useTransition();
+  const [refreshing, startRefreshing] = useTransition();
   const [syncNotice, setSyncNotice] = useState("");
   const [error, setError] = useState("");
   const [errorCode, setErrorCode] = useState("");
@@ -187,27 +201,16 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
   const hasActiveFilters = Boolean(query.trim() || equipeFilter);
   const showTeamGroups = !equipeFilter && filteredGroups.length > 1;
 
-  const changeStats = useMemo(() => {
-    let cellChanges = 0;
-    let brokersChanged = 0;
-    const dirtyBrokerIds = new Set<string>();
-
-    for (const broker of data.corretores) {
-      const current = selected[broker.id] ?? [];
-      const original = baseline[broker.id] ?? [];
-      if (sameRoletaIds(current, original)) continue;
-
-      brokersChanged += 1;
-      dirtyBrokerIds.add(broker.id);
-      const currentSet = new Set(current);
-      const originalSet = new Set(original);
-      for (const roleta of data.roletas) {
-        if (currentSet.has(roleta.id) !== originalSet.has(roleta.id)) cellChanges += 1;
-      }
-    }
-
-    return { cellChanges, brokersChanged, dirty: cellChanges > 0, dirtyBrokerIds };
-  }, [baseline, data.corretores, data.roletas, selected]);
+  const changeStats = useMemo(
+    () => summarizeRoletaDraft({
+      brokerIds: data.corretores.map((broker) => broker.id),
+      roletaIds: data.roletas.map((roleta) => roleta.id),
+      baseline,
+      selected,
+    }),
+    [baseline, data.corretores, data.roletas, selected],
+  );
+  const refreshRequired = isRoletaRefreshRequired(errorCode);
 
   const showEquipeFilter = data.viewer_perfil !== "lider";
   const replicationCandidates = useMemo(() => {
@@ -248,15 +251,17 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
   }, [changeStats.dirty]);
 
   function markDirty() {
-    setError("");
-    setErrorCode("");
+    if (!refreshRequired) {
+      setError("");
+      setErrorCode("");
+    }
     setSyncNotice("");
     setAuditWarning("");
   }
 
   function toggle(corretorId: string, roletaId: string) {
     const broker = data.corretores.find((item) => item.id === corretorId);
-    if (!broker || isPermissionLocked(broker.status)) return;
+    if (!broker || refreshRequired || isPermissionLocked(broker.status)) return;
 
     markDirty();
     setSelected((current) => ({
@@ -269,7 +274,7 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
 
   function setBrokerRoletas(corretorId: string, roletaIds: string[]) {
     const broker = data.corretores.find((item) => item.id === corretorId);
-    if (!broker || isPermissionLocked(broker.status)) return;
+    if (!broker || refreshRequired || isPermissionLocked(broker.status)) return;
 
     markDirty();
     setSelected((current) => ({
@@ -285,7 +290,7 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
   }
 
   function confirmReplication() {
-    if (!replicationSource || !replicationPreview.affected.length) return;
+    if (refreshRequired || !replicationSource || !replicationPreview.affected.length) return;
 
     const pattern = [...(selected[replicationSource.id] ?? [])];
     markDirty();
@@ -311,6 +316,21 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
     setErrorCode("");
     setAuditWarning("");
     setReplicationContext(null);
+  }
+
+  function requestDiscardChanges() {
+    const suffix = changeStats.cellChanges === 1 ? "alteração pendente" : "alterações pendentes";
+    if (!window.confirm(`Descartar ${changeStats.cellChanges} ${suffix}? Esta ação não pode ser desfeita.`)) return;
+    discardChanges();
+  }
+
+  function refreshStaleData() {
+    const suffix = changeStats.cellChanges === 1 ? "alteração local" : "alterações locais";
+    const confirmed = window.confirm(
+      `Atualizar os dados descartará ${changeStats.cellChanges} ${suffix} deste rascunho. Continuar?`,
+    );
+    if (!confirmed) return;
+    startRefreshing(() => router.refresh());
   }
 
   function toggleTeamCollapse(teamName: string) {
@@ -346,7 +366,7 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
   }
 
   function saveChanges() {
-    if (!changeStats.dirty) return;
+    if (!changeStats.dirty || refreshRequired) return;
 
     if (!hasSupabaseEnv()) {
       setError("Não foi possível salvar: ambiente sem Supabase. Peça ao administrador para concluir a configuração.");
@@ -398,7 +418,7 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
         <input
           type="checkbox"
           checked={checked}
-          disabled={locked || saving}
+          disabled={locked || saving || refreshRequired}
           onChange={() => toggle(broker.id, roletaId)}
         />
         <span aria-hidden="true">
@@ -419,13 +439,13 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
     const visibleNames = names.slice(0, 2);
     const remaining = names.length - visibleNames.length;
     return (
-      <span className="permission-roleta-summary" title={names.length ? names.join(", ") : "Nenhuma roleta liberada"}>
+      <span className="permission-roleta-summary">
         <span className="permission-roleta-count">
           <strong>{count}</strong>
-          <span>de {data.roletas.length}</span>
+          <span>/ {data.roletas.length}</span>
         </span>
         <span className="permission-roleta-summary-names">
-          {visibleNames.length ? visibleNames.join(" · ") : "Nenhuma liberada"}
+          {visibleNames.length ? visibleNames.join(" · ") : "Sem acesso às roletas"}
           {remaining > 0 ? ` +${remaining}` : ""}
         </span>
       </span>
@@ -442,7 +462,7 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
           <span className="permission-head-label">Equipe</span>
         </span>
         <span className="permission-col-roletas" role="columnheader">
-          <span className="permission-head-label">Roletas</span>
+          <span className="permission-head-label">Acesso às roletas</span>
         </span>
         <span className="permission-col-status" role="columnheader">
           <span className="permission-head-label">Status</span>
@@ -462,24 +482,36 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
         key={broker.id}
       >
         <span className="permission-col-broker" role="cell">
+          <span className="permission-broker-identity">
+            <span className="avatar avatar-light" aria-hidden="true">{initials(broker.nome)}</span>
+            <span className="permission-broker-copy">
+              <strong>{broker.nome}</strong>
+              <span className="permission-broker-meta">
+                <small>{broker.email}</small>
+                {dirty ? <em className="permission-dirty-indicator">Alterado</em> : null}
+              </span>
+            </span>
+          </span>
+        </span>
+        <span className="permission-col-team team-cell" role="cell" data-label="Equipe">{teamLabel(broker.equipeNome)}</span>
+        <span className="permission-col-roletas" role="cell" data-label="Acesso às roletas">
           <button
             type="button"
-            className="permission-broker-open"
+            className="permission-roleta-open"
+            disabled={saving || refreshRequired}
+            aria-label={`Editar roletas de ${broker.nome}: ${selected[broker.id]?.length ?? 0} de ${data.roletas.length} liberadas`}
             onClick={(event) => {
               brokerTriggerRef.current = event.currentTarget;
               setEditingBroker(broker);
             }}
-            title={`Editar roletas de ${broker.nome}`}
           >
-            <span className="avatar avatar-light">{initials(broker.nome)}</span>
-            <span>
-              <strong>{broker.nome}</strong>
-              <small>{broker.email}</small>
+            {renderBrokerRoletaSummary(broker)}
+            <span className="permission-roleta-edit" aria-hidden="true">
+              <Pencil size={14} />
+              Editar
             </span>
           </button>
         </span>
-        <span className="permission-col-team team-cell" role="cell" data-label="Equipe">{teamLabel(broker.equipeNome)}</span>
-        <span className="permission-col-roletas" role="cell" data-label="Roletas liberadas">{renderBrokerRoletaSummary(broker)}</span>
         <span className="permission-col-status" role="cell">
           {statusBadge(broker.status)}
         </span>
@@ -588,7 +620,7 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
                 <button
                   type="button"
                   className="button button-quiet"
-                  disabled={saving}
+                  disabled={saving || refreshRequired}
                   onClick={() => setBrokerRoletas(broker.id, [
                     ...new Set([...(selected[broker.id] ?? []), ...visibleRoletas.map((item) => item.id)]),
                   ])}
@@ -598,7 +630,7 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
                 <button
                   type="button"
                   className="button button-quiet"
-                  disabled={saving || !selectedCount}
+                  disabled={saving || refreshRequired || !selectedCount}
                   onClick={() => setBrokerRoletas(
                     broker.id,
                     (selected[broker.id] ?? []).filter((id) => !visibleRoletas.some((roleta) => roleta.id === id)),
@@ -609,7 +641,7 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
               </div>
             ) : null}
             <button type="button" className="button button-primary" onClick={closeBrokerModal}>
-              Concluir seleção
+              Aplicar ao rascunho
             </button>
           </footer>
         </div>
@@ -730,11 +762,17 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
 
   return (
     <>
-      <div className="toolbar">
+      <div className="toolbar roulette-config-toolbar" role="group" aria-label="Filtros e ações da configuração">
         <label className="search-box">
           <Search size={18} aria-hidden="true" />
           <span className="sr-only">Buscar corretor</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nome ou e-mail" />
+          <input
+            type="search"
+            autoComplete="off"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar por nome ou e-mail"
+          />
         </label>
         {showEquipeFilter ? (
         <label className="filter-select button button-quiet">
@@ -758,7 +796,7 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
           <button
             type="button"
             className="button button-quiet"
-            disabled={saving}
+            disabled={saving || refreshRequired}
             onClick={(event) => openReplicationDialog(event.currentTarget)}
             title={`Escolha um corretor modelo e revise o alcance na equipe ${equipeFilter}.`}
           >
@@ -771,7 +809,7 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
           <button
             type="button"
             className="button button-quiet"
-            disabled={syncing || saving || changeStats.dirty}
+            disabled={syncing || saving || refreshing || changeStats.dirty}
             onClick={handleSyncBolsao}
             title={changeStats.dirty
               ? "Salve ou descarte o rascunho antes de sincronizar."
@@ -783,30 +821,49 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
         ) : null}
       </div>
 
-      {error ? (
+      {error && !refreshRequired ? (
         <div className="form-error config-error" role="alert">
+          <TriangleAlert size={18} aria-hidden="true" />
           <span>{error}</span>
-          {errorCode === "conflict" || errorCode === "partial" ? (
-            <button type="button" className="button button-quiet" onClick={() => router.refresh()}>
-              Descartar rascunho e atualizar
-            </button>
-          ) : null}
         </div>
       ) : null}
       {syncNotice ? <p className="form-success" role="status" aria-live="polite">{syncNotice}</p> : null}
       {auditWarning ? <p className="form-error" role="alert">{auditWarning}</p> : null}
 
-      {changeStats.dirty ? (
-        <div className="config-change-bar" role="status" aria-live="polite">
-          <div>
+      {refreshRequired ? (
+        <div className="config-change-bar is-blocked" aria-busy={refreshing}>
+          <div className="config-change-copy" role="alert" aria-live="assertive">
+            <TriangleAlert size={20} aria-hidden="true" />
+            <div>
+              <strong>Não é seguro continuar neste rascunho</strong>
+              <span>{error} Recarregue para conferir o estado atual; este rascunho será descartado.</span>
+            </div>
+          </div>
+          <div className="config-change-actions">
+            <button
+              type="button"
+              className="button button-danger"
+              disabled={refreshing}
+              onClick={refreshStaleData}
+            >
+              <RefreshCw size={16} className={refreshing ? "spin" : undefined} aria-hidden="true" />
+              {refreshing ? "Atualizando…" : "Atualizar e descartar"}
+            </button>
+          </div>
+        </div>
+      ) : changeStats.dirty ? (
+        <div className="config-change-bar" aria-busy={saving}>
+          <div className="config-change-copy" role="status" aria-live="polite">
+            <div>
             <strong>
               {changeStats.cellChanges} mudança{changeStats.cellChanges === 1 ? "" : "s"} em {changeStats.brokersChanged} corretor{changeStats.brokersChanged === 1 ? "" : "es"}
             </strong>
-            <span>Rascunho protegido · sincronização pausada até salvar ou descartar.</span>
+            <span>Rascunho não salvo · sincronização pausada até salvar ou descartar.</span>
+            </div>
           </div>
           <div className="config-change-actions">
-            <button type="button" className="button button-quiet" disabled={saving} onClick={discardChanges}>
-              Descartar
+            <button type="button" className="button button-quiet" disabled={saving} onClick={requestDiscardChanges}>
+              Descartar alterações
             </button>
             <button type="button" className="button button-primary" disabled={saving} onClick={saveChanges}>
               {saveLabel}
@@ -849,11 +906,6 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
               {filtered.length} corretor{filtered.length === 1 ? "" : "es"}
               {hasActiveFilters ? " no filtro" : ""}
             </span>
-            {changeStats.dirty ? (
-              <span className="permission-matrix-cap-meta config-dirty-pill">
-                {`${changeStats.cellChanges} mudança${changeStats.cellChanges === 1 ? "" : "s"} pendente${changeStats.cellChanges === 1 ? "" : "s"}`}
-              </span>
-            ) : null}
           </div>
           <div
             className="permission-table permission-list-table permission-matrix"
@@ -866,23 +918,30 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
                   const collapsed = Boolean(collapsedTeams[group.name]);
                   const dirtyInGroup = groupDirtyCount(group.brokers);
                   return (
-                    <section className={`permission-group${collapsed ? " is-collapsed" : ""}`} role="rowgroup" key={group.name}>
-                      <div className="permission-group-label">
-                        <button
-                          type="button"
-                          className="permission-group-toggle"
-                          aria-expanded={!collapsed}
-                          onClick={() => toggleTeamCollapse(group.name)}
-                        >
-                          <ChevronDown size={16} aria-hidden="true" className={collapsed ? "is-collapsed" : undefined} />
-                          <span>
-                            {group.name}
-                            <small>
-                              {group.brokers.length} corretor{group.brokers.length === 1 ? "" : "es"}
-                              {dirtyInGroup > 0 ? ` · ${dirtyInGroup} alterado${dirtyInGroup === 1 ? "" : "s"}` : ""}
-                            </small>
-                          </span>
-                        </button>
+                    <section
+                      className={`permission-group${collapsed ? " is-collapsed" : ""}`}
+                      role="rowgroup"
+                      aria-label={`Equipe ${group.name}`}
+                      key={group.name}
+                    >
+                      <div className="permission-group-label" role="row">
+                        <span className="permission-group-header" role="columnheader" aria-colspan={4}>
+                          <button
+                            type="button"
+                            className="permission-group-toggle"
+                            aria-expanded={!collapsed}
+                            onClick={() => toggleTeamCollapse(group.name)}
+                          >
+                            <ChevronDown size={16} aria-hidden="true" className={collapsed ? "is-collapsed" : undefined} />
+                            <span>
+                              {group.name}
+                              <small>
+                                {group.brokers.length} corretor{group.brokers.length === 1 ? "" : "es"}
+                                {dirtyInGroup > 0 ? ` · ${dirtyInGroup} alterado${dirtyInGroup === 1 ? "" : "s"}` : ""}
+                              </small>
+                            </span>
+                          </button>
+                        </span>
                       </div>
                       {!collapsed ? group.brokers.map((broker) => renderListRow(broker)) : null}
                     </section>
