@@ -29,6 +29,14 @@ function json(body: JsonRecord, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
 }
 
+function passwordFromBitrixId(bitrixUserId: string) {
+  const normalized = bitrixUserId.trim();
+  if (!/^\d+$/.test(normalized)) {
+    throw new Error(`ID do Bitrix inválido: ${bitrixUserId}`);
+  }
+  return normalized.padStart(6, "0");
+}
+
 function displayNameFromEmail(email: string) {
   const local = email.trim().split("@")[0] || email.trim();
   return local.split(/[._-]/).filter(Boolean)
@@ -318,6 +326,7 @@ async function synchronizeTeamsAndUsers() {
         const { data, error } = await supabase.auth.admin.createUser({
           email,
           email_confirm: true,
+          ...(profile === "corretor" ? { password: passwordFromBitrixId(bitrixUserId) } : {}),
           user_metadata: { nome: name },
           app_metadata: { perfil: profile, bitrix_user_id: bitrixUserId },
         });

@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { User } from "@supabase/supabase-js";
+import { passwordFromBitrixId } from "@/lib/auth/bitrix-password";
 import { defaultPaginasForPerfil } from "@/lib/auth/paginas-acesso";
 import { bitrixCall, bitrixCallPage, hasBitrixEnv } from "@/lib/bitrix/client";
 import { resolveUserDisplayName } from "@/lib/bitrix/user-display-name";
@@ -124,6 +125,7 @@ export async function syncBitrixPeople(): Promise<BitrixPeopleSyncSummary> {
         const { data, error } = await admin.auth.admin.createUser({
           email,
           email_confirm: true,
+          ...(profile === "corretor" ? { password: passwordFromBitrixId(bitrixUserId) } : {}),
           user_metadata: { nome: name },
           app_metadata: { perfil: profile, bitrix_user_id: bitrixUserId },
         });

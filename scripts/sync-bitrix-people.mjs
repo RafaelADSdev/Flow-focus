@@ -23,6 +23,14 @@ function displayNameFromEmail(email) {
     .join(" ") || "Usuário";
 }
 
+function passwordFromBitrixId(bitrixUserId) {
+  const normalized = String(bitrixUserId).trim();
+  if (!/^\d+$/.test(normalized)) {
+    throw new Error(`ID do Bitrix inválido: ${bitrixUserId}`);
+  }
+  return normalized.padStart(6, "0");
+}
+
 function resolveUserDisplayName(bitrixUser, email, existingName) {
   const parts = [bitrixUser?.NAME, bitrixUser?.SECOND_NAME, bitrixUser?.LAST_NAME]
     .map((value) => String(value ?? "").replace(/\s+/g, " ").trim())
@@ -156,6 +164,7 @@ async function main() {
         const { data, error } = await supabase.auth.admin.createUser({
           email,
           email_confirm: true,
+          ...(profile === "corretor" ? { password: passwordFromBitrixId(bitrixUserId) } : {}),
           user_metadata: { nome: name },
           app_metadata: { perfil: profile, bitrix_user_id: bitrixUserId },
         });
