@@ -21,13 +21,6 @@ import { sameRoletaIds } from "@/lib/roletas/permissions";
 import type { RoletasConfigCorretor, RoletasConfigData, RoletasPermissionReceipt } from "@/lib/types/roletas";
 import { hasSupabaseEnv } from "@/lib/supabase/env";
 import { initials } from "@/lib/utils";
-import { StatusBadge } from "./status-badge";
-
-function statusBadge(status: RoletasConfigCorretor["status"]) {
-  if (status === "bloqueado") return <StatusBadge tone="danger">Bloqueado</StatusBadge>;
-  if (status === "auditoria") return <StatusBadge tone="warning">Em auditoria</StatusBadge>;
-  return <StatusBadge tone="success">Liberado</StatusBadge>;
-}
 
 function snapshotFromData(data: RoletasConfigData): Record<string, string[]> {
   return Object.fromEntries(data.corretores.map((item) => [item.id, [...item.roletas]]));
@@ -464,9 +457,6 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
         <span className="permission-col-roletas" role="columnheader">
           <span className="permission-head-label">Acesso às roletas</span>
         </span>
-        <span className="permission-col-status" role="columnheader">
-          <span className="permission-head-label">Status</span>
-        </span>
       </div>
     );
   }
@@ -511,9 +501,6 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
               Editar
             </span>
           </button>
-        </span>
-        <span className="permission-col-status" role="cell">
-          {statusBadge(broker.status)}
         </span>
       </div>
     );
@@ -600,7 +587,6 @@ export function RouletteConfig({ data }: { data: RoletasConfigData }) {
                   >
                     <span className={`permission-modal-tile-chip signal-${tone}`}>
                       <span className="permission-modal-tile-name">{roleta.nome}</span>
-                      <span className="permission-modal-tile-meta">{roleta.disponiveis} na fila</span>
                     </span>
                     <span className="permission-toggle permission-toggle--cell">
                       {renderToggle(broker, roleta.id, roleta.nome)}

@@ -19,10 +19,12 @@ import {
   XCircle,
 } from "lucide-react";
 import { ResultsCapturaCharts } from "@/components/results-captura-charts";
+import { ResultadosDateFilter } from "@/components/resultados-date-filter";
 import { ResultsLeadsDialog } from "@/components/results-leads-dialog";
 import { sincronizarResultadosBitrix } from "@/lib/actions/resultados";
 import { createClient } from "@/lib/supabase/client";
 import type { ResultadoBucket, ResultadosData } from "@/lib/types/resultados";
+import type { ResultadosDateRange } from "@/lib/resultados-filters";
 import { formatDate } from "@/lib/utils";
 
 const AUTO_SYNC_MS = 2 * 60 * 1000;
@@ -36,7 +38,7 @@ const metrics = [
   { key: "quarentena", label: "Leads em Quarentena", icon: ShieldAlert, tone: "warning" },
 ] as const;
 
-export function ResultsPanel({ data, bitrixPortalBase = "" }: { data: ResultadosData; bitrixPortalBase?: string }) {
+export function ResultsPanel({ data, range = null, bitrixPortalBase = "" }: { data: ResultadosData; range?: ResultadosDateRange | null; bitrixPortalBase?: string }) {
   const router = useRouter();
   const [openBucket, setOpenBucket] = useState<ResultadoBucket | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -85,6 +87,7 @@ export function ResultsPanel({ data, bitrixPortalBase = "" }: { data: Resultados
 
   return (
     <>
+      <ResultadosDateFilter range={range} />
       <section className="results-strip" aria-label="Indicadores de resultados">
         {metrics.map(({ key, label, icon: Icon, tone }) => (
           <button

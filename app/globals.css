@@ -424,8 +424,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .permission-col-action:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
 .permission-col-broker,
 .permission-col-team { justify-self: start; text-align: left; }
-.permission-col-roleta,
-.permission-col-status { justify-self: center; text-align: center; }
+.permission-col-roleta { justify-self: center; text-align: center; }
 .permission-col-broker {
   position: sticky;
   left: 0;
@@ -459,7 +458,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .permission-row-action:disabled { opacity: 0.45; cursor: not-allowed; }
 .permission-row-action:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
 .team-cell { color: var(--ink); font-size: 0.76rem; font-weight: 600; line-height: 1.35; white-space: nowrap; }
-.permission-col-status { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .permission-lock-note { margin: 0; color: var(--muted); font-size: 0.64rem; font-weight: 550; line-height: 1.3; }
 .permission-toggle { display: grid; place-items: center; width: 100%; }
 .permission-toggle label {
@@ -732,7 +730,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .permission-list-table .permission-head,
 .permission-list-table .permission-row {
   min-width: min(100%, 720px);
-  grid-template-columns: minmax(230px, 1.2fr) minmax(104px, .55fr) minmax(260px, 1.35fr) minmax(108px, .52fr);
+  grid-template-columns: minmax(230px, 1.2fr) minmax(104px, .55fr) minmax(260px, 1.35fr);
 }
 .permission-list-table.permission-table { max-height: none; overflow: visible; }
 .permission-list-table .permission-head { position: static; }
@@ -1004,13 +1002,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   font-size: 0.74rem;
   font-weight: 700;
   line-height: 1.3;
-}
-.permission-modal-tile-meta {
-  color: inherit;
-  font-size: 0.62rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.85;
 }
 .permission-modal-tile .permission-toggle { align-self: flex-end; }
 .permission-modal-footer {
@@ -2267,17 +2258,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   }
   .permission-list-table .permission-row {
     min-width: 0;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-      "broker status"
-      "team team"
-      "roletas roletas";
+      "broker"
+      "team"
+      "roletas";
     gap: 11px 14px;
     padding: 14px;
   }
   .permission-list-table .permission-group-label { min-width: 0; }
   .permission-list-table .permission-col-broker { grid-area: broker; }
-  .permission-list-table .permission-col-status { grid-area: status; align-self: start; }
   .permission-list-table .permission-col-team { grid-area: team; }
   .permission-list-table .permission-col-roletas { grid-area: roletas; }
   .permission-list-table .team-cell,
@@ -3074,6 +3064,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .criteria-row--compact strong { font-size: .74rem; line-height: 1.35; }
 
 /* Resultados: uma régua operacional abre o livro de leads abaixo. */
+.results-date-filter-wrap { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 18px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-raised); }
+.results-date-filter-heading { min-width: 150px; display: flex; flex-direction: column; gap: 4px; }
+.results-date-filter-label { color: var(--ink); font-size: .76rem; font-weight: 750; line-height: 1.25; }
+.results-date-filter-current { color: var(--muted); font-size: .68rem; line-height: 1.35; font-variant-numeric: tabular-nums; }
+.results-date-filter { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.results-date-field { display: flex; min-width: 138px; flex-direction: column; gap: 5px; color: var(--muted); font-size: .63rem; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+.results-date-input { position: relative; display: block; }
+.results-date-input input { width: 100%; height: 38px; padding: 0 32px 0 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-raised); color: var(--ink); font-size: .76rem; font-weight: 600; }
+.results-date-input input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); outline: 0; }
+.results-date-input svg { position: absolute; top: 50%; right: 10px; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.results-date-actions { display: flex; gap: 8px; }
+.results-date-actions .button { min-height: 38px; padding-inline: 12px; font-size: .76rem; }
 .results-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 18px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .results-sync-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 34px; flex-wrap: wrap; }
 .results-sync-note { margin: 0; color: var(--muted); font-size: .7rem; line-height: 1.45; }
@@ -3159,6 +3161,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 }
 
 @media (max-width: 760px) {
+  .results-date-filter-wrap { align-items: stretch; flex-direction: column; gap: 12px; padding: 14px; }
+  .results-date-filter-heading { min-width: 0; }
+  .results-date-filter { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+  .results-date-field { min-width: 0; }
+  .results-date-actions { grid-column: 1 / -1; }
+  .results-date-actions .button { flex: 1; }
   .results-strip { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; margin-inline: -18px; padding-inline: 18px; border-bottom: 0; }
   .results-metric { min-width: 154px; min-height: 96px; scroll-snap-align: start; border-bottom: 1px solid var(--line) !important; }
   .results-toolbar { align-items: stretch; flex-direction: column; }

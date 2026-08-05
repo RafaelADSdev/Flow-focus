@@ -17,6 +17,7 @@ import { getBitrixCaptureTarget } from "@/lib/bitrix/capture-target";
 import { filterCapturasConfirmadasDoSistema, isCapturaDoSistema, partitionRoletas } from "@/lib/data/captura-sistema";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseEnv, hasSupabaseSecretKey } from "@/lib/supabase/env";
+import { isDateInResultadosRange, type ResultadosDateRange } from "@/lib/resultados-filters";
 import type { ResultadoBucket, ResultadoLead, ResultadosData, ResultadoTopCorretor } from "@/lib/types/resultados";
 
 type OpportunityRow = {
@@ -318,7 +319,7 @@ function buildCapturaStats(
   };
 }
 
-export async function getResultadosData(): Promise<ResultadosData> {
+export async function getResultadosData(range: ResultadosDateRange | null = null): Promise<ResultadosData> {
   if (!hasSupabaseEnv() || !hasSupabaseSecretKey()) return emptyData();
   const viewer = await getViewerContext();
   if (!viewer || !canViewResultados(viewer.perfil)) return emptyData();
@@ -421,17 +422,19 @@ export async function getResultadosData(): Promise<ResultadosData> {
     quarentenaLeads.push(mapOpportunityToLead(item, users, snapshots, stageNamesByCategory, "quarentena"));
   }
 
-  const leads = [...capturaLeads, ...quarentenaLeads];
+  const filteredCapturaLeads = capturaLeads.filter((lead) => isDateInResultadosRange(lead.captadaEm, range));
+  const filteredQuarentenaLeads = quarentenaLeads.filter((lead) => isDateInResultadosRange(lead.captadaEm, range));
+  const leads = [...filteredCapturaLeads, ...filteredQuarentenaLeads];
   const photosByUserId = await resolveBrokerPhotos(users.values());
 
-  const indicadores = capturaLeads.reduce<ResultadosData["indicadores"]>((acc, lead) => {
+  const indicadores = filteredCapturaLeads.reduce<ResultadosData["indicadores"]>((acc, lead) => {
     acc.total += 1;
     acc[lead.bucket] += 1;
     return acc;
   }, { total: 0, andamento: 0, vendas: 0, perdidos: 0, retornaram: 0, quarentena: 0 });
-  indicadores.quarentena = quarentenaLeads.length;
+  indicadores.quarentena = filteredQuarentenaLeads.length;
 
-  const { capturasPorEquipe, topCorretores } = buildCapturaStats(capturaLeads, quarentenaLeads, photosByUserId);
+  const { capturasPorEquipe, topCorretores } = buildCapturaStats(filteredCapturaLeads, filteredQuarentenaLeads, photosByUserId);
 
   return { indicadores, leads, capturasPorEquipe, topCorretores, geradoEm: new Date().toISOString() };
 }
