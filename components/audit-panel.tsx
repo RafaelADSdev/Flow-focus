@@ -54,7 +54,7 @@ export function AuditPanel({ data, bitrixPortalBase = "" }: { data: AuditoriasPa
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [checked, setChecked] = useState<Record<string, LeadChecklist>>({});
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState<Record<string, string>>({});
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -89,9 +89,17 @@ export function AuditPanel({ data, bitrixPortalBase = "" }: { data: AuditoriasPa
     }));
   }
 
+  function updateNote(leadId: string, value: string) {
+    setNotes((current) => ({
+      ...current,
+      [leadId]: value,
+    }));
+  }
+
   function openAudit(item: QueueItem) {
     if (!item.leads.length) return;
     setChecked(Object.fromEntries(item.leads.map((lead) => [lead.id, checklistFromLead(lead)])));
+    setNotes(Object.fromEntries(item.leads.map((lead) => [lead.id, lead.observacao_lideranca ?? ""])));
     setSelectedId(item.id);
   }
 
@@ -102,10 +110,10 @@ export function AuditPanel({ data, bitrixPortalBase = "" }: { data: AuditoriasPa
 
     const result = await salvarChecklistAuditoriaAction({
       auditoriaId: selected.id,
-      observacoes: notes,
       leads: selected.leads.map((lead) => ({
         oportunidadeId: lead.id,
         ...checked[lead.id],
+        observacao: notes[lead.id] ?? "",
       })),
     });
     setPending(false);
@@ -117,9 +125,12 @@ export function AuditPanel({ data, bitrixPortalBase = "" }: { data: AuditoriasPa
 
     const releaseText = result.vagasLiberadas === 1 ? "1 vaga liberada" : `${result.vagasLiberadas} vagas liberadas`;
     const pendingText = result.leadsPendentes === 1 ? "1 lead segue pendente" : `${result.leadsPendentes} leads seguem pendentes`;
-    setToast(`${selected.corretor}: ${releaseText}; ${pendingText}.`);
+    const bitrixWarning = result.bitrixNaoSincronizados.length
+      ? ` Observação não sincronizada no Bitrix para: ${result.bitrixNaoSincronizados.map((dealId) => `#${dealId}`).join(", ")}.`
+      : "";
+    setToast(`${selected.corretor}: ${releaseText}; ${pendingText}.${bitrixWarning}`);
     setSelectedId(null);
-    setNotes("");
+    setNotes({});
     router.refresh();
     window.setTimeout(() => setToast(""), 4600);
   }
@@ -221,6 +232,7 @@ export function AuditPanel({ data, bitrixPortalBase = "" }: { data: AuditoriasPa
               {selected.leads.map((lead, index) => {
                 const leadChecklist = checked[lead.id] ?? checklistFromLead(lead);
                 const approved = isApproved(leadChecklist);
+                const leadNotes = notes[lead.id] ?? "";
                 const link = bitrixUrl(bitrixPortalBase, lead.bitrix_deal_id);
                 return (
                   <article className="audit-lead" key={lead.id}>
@@ -242,14 +254,21 @@ export function AuditPanel({ data, bitrixPortalBase = "" }: { data: AuditoriasPa
                         </label>
                       ))}
                     </div>
+                    <div className="field audit-lead-notes">
+                      <label htmlFor={`notes-${lead.id}`}><MessageSquareText size={16} />Observações da liderança</label>
+                      <textarea
+                        id={`notes-${lead.id}`}
+                        value={leadNotes}
+                        maxLength={1500}
+                        onChange={(event) => updateNote(lead.id, event.target.value)}
+                        placeholder="Registre orientações para os leads que ainda precisam de ajuste."
+                        rows={3}
+                      />
+                      <small>{leadNotes.length}/1500 caracteres</small>
+                    </div>
                   </article>
                 );
               })}
-              <div className="field">
-                <label htmlFor="notes"><MessageSquareText size={16} />Observações da liderança</label>
-                <textarea id="notes" value={notes} maxLength={1500} onChange={(event) => setNotes(event.target.value)} placeholder="Registre orientações para os leads que ainda precisam de ajuste." rows={4} />
-                <small>{notes.length}/1500 caracteres</small>
-              </div>
             </div>
             <footer>
               <p>{readyCount} de {selected.leads.length} leads serão aprovados; os demais continuam ocupando vaga.</p>

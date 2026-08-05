@@ -8,6 +8,7 @@ export type AuditoriaLeadItem = {
   tentativa_contato_ok: boolean;
   comentario_bitrix_ok: boolean;
   etapa_atualizada_ok: boolean;
+  observacao_lideranca: string | null;
 };
 
 export type AuditoriaFilaItem = {

@@ -3076,6 +3076,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .criteria-row--compact { min-height: 42px; align-items: center; padding: 9px 0; }
 .criteria-row--compact .check-control { grid-row: auto; width: 21px; height: 21px; margin: 0; }
 .criteria-row--compact strong { font-size: .74rem; line-height: 1.35; }
+.audit-lead-notes { padding: 0 15px 14px; border-top: 1px solid var(--line); background: var(--surface); }
+.audit-lead-notes label { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: .72rem; font-weight: 700; }
+.audit-lead-notes textarea { min-height: 72px; resize: vertical; }
+.audit-lead-notes small { display: block; margin-top: 6px; color: var(--muted); font-size: .64rem; text-align: right; }
 
 /* Resultados: uma régua operacional abre o livro de leads abaixo. */
 .results-date-filter-wrap { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 18px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-raised); }

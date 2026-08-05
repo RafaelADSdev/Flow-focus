@@ -38,8 +38,8 @@ export type Database = {
         Relationships: [];
       };
       oportunidades: {
-        Row: { id: string; bitrix_deal_id: string; roleta_id: string; corretor_id: string | null; status: StatusOportunidade; captada_em: string | null; ultima_atualizacao_bitrix: string | null; titulo: string | null; valor: number | null; roleta_atual: string | null; bitrix_stage_id: string | null; bitrix_assigned_by_id: string | null; data_criacao_bitrix: string | null; tentativa_contato_ok: boolean; comentario_bitrix_ok: boolean; etapa_atualizada_ok: boolean; auditoria_aprovada_em: string | null; ultima_auditoria_em: string | null; auditoria_lider_id: string | null; criado_em: string };
-        Insert: { id?: string; bitrix_deal_id: string; roleta_id: string; corretor_id?: string | null; status?: StatusOportunidade; captada_em?: string | null; titulo?: string | null; valor?: number | null; roleta_atual?: string | null; bitrix_stage_id?: string | null; bitrix_assigned_by_id?: string | null; data_criacao_bitrix?: string | null; ultima_atualizacao_bitrix?: string | null; tentativa_contato_ok?: boolean; comentario_bitrix_ok?: boolean; etapa_atualizada_ok?: boolean; auditoria_aprovada_em?: string | null; ultima_auditoria_em?: string | null; auditoria_lider_id?: string | null };
+        Row: { id: string; bitrix_deal_id: string; roleta_id: string; corretor_id: string | null; status: StatusOportunidade; captada_em: string | null; ultima_atualizacao_bitrix: string | null; titulo: string | null; valor: number | null; roleta_atual: string | null; bitrix_stage_id: string | null; bitrix_assigned_by_id: string | null; data_criacao_bitrix: string | null; tentativa_contato_ok: boolean; comentario_bitrix_ok: boolean; etapa_atualizada_ok: boolean; auditoria_aprovada_em: string | null; ultima_auditoria_em: string | null; auditoria_lider_id: string | null; observacao_lideranca: string | null; observacao_lideranca_em: string | null; criado_em: string };
+        Insert: { id?: string; bitrix_deal_id: string; roleta_id: string; corretor_id?: string | null; status?: StatusOportunidade; captada_em?: string | null; titulo?: string | null; valor?: number | null; roleta_atual?: string | null; bitrix_stage_id?: string | null; bitrix_assigned_by_id?: string | null; data_criacao_bitrix?: string | null; ultima_atualizacao_bitrix?: string | null; tentativa_contato_ok?: boolean; comentario_bitrix_ok?: boolean; etapa_atualizada_ok?: boolean; auditoria_aprovada_em?: string | null; ultima_auditoria_em?: string | null; auditoria_lider_id?: string | null; observacao_lideranca?: string | null; observacao_lideranca_em?: string | null };
         Update: Partial<Database["public"]["Tables"]["oportunidades"]["Insert"]>;
         Relationships: [];
       };
@@ -89,7 +89,7 @@ export type Database = {
       obter_config_roletas: { Args: Record<string, never>; Returns: Json };
       obter_painel_auditorias: { Args: Record<string, never>; Returns: Json };
       obter_capacidade_corretor: { Args: { p_corretor_id: string }; Returns: Json };
-      salvar_checklist_auditoria: { Args: { p_auditoria_id: string; p_lider_id: string; p_leads: Json; p_observacoes?: string | null }; Returns: Json };
+      salvar_checklist_auditoria: { Args: { p_auditoria_id: string; p_lider_id: string; p_leads: Json }; Returns: Json };
       registrar_geo_sessao: { Args: { p_user_id: string; p_expires_at: string }; Returns: undefined };
     };
     Enums: {

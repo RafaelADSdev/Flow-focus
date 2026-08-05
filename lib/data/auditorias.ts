@@ -40,6 +40,7 @@ type OportunidadeAuditoriaRow = {
   comentario_bitrix_ok: boolean;
   etapa_atualizada_ok: boolean;
   auditoria_aprovada_em: string | null;
+  observacao_lideranca: string | null;
 };
 
 export function getEmptyAuditoriasPainel(): AuditoriasPainelData {
@@ -200,7 +201,7 @@ async function loadAuditoriasFromTables(viewer: ViewerContext): Promise<Auditori
     admin.from("auditorias").select("id, corretor_id, status, data, concluida_em"),
     admin
       .from("oportunidades")
-      .select("id, bitrix_deal_id, roleta_id, corretor_id, titulo, captada_em, data_criacao_bitrix, bitrix_stage_id, ultima_atualizacao_bitrix, tentativa_contato_ok, comentario_bitrix_ok, etapa_atualizada_ok, auditoria_aprovada_em")
+      .select("id, bitrix_deal_id, roleta_id, corretor_id, titulo, captada_em, data_criacao_bitrix, bitrix_stage_id, ultima_atualizacao_bitrix, tentativa_contato_ok, comentario_bitrix_ok, etapa_atualizada_ok, auditoria_aprovada_em, observacao_lideranca")
       .not("corretor_id", "is", null)
       .not("captada_em", "is", null),
     fetchBitrixDealStages(process.env.BITRIX24_CAPTURE_CATEGORY_ID ?? "16").catch(() => []),
@@ -284,6 +285,7 @@ async function loadAuditoriasFromTables(viewer: ViewerContext): Promise<Auditori
         tentativa_contato_ok: lead.tentativa_contato_ok,
         comentario_bitrix_ok: lead.comentario_bitrix_ok,
         etapa_atualizada_ok: lead.etapa_atualizada_ok,
+        observacao_lideranca: lead.observacao_lideranca,
       })),
     });
   }
