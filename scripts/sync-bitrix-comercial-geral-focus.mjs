@@ -197,9 +197,12 @@ function rouletteValue(deal) {
 
 
 function isFocus(deal) {
-
-  return rouletteValue(deal).toLocaleLowerCase().includes(rouletteTag.toLocaleLowerCase());
-
+  const stageId = String(deal.STAGE_ID ?? "").trim().toUpperCase().replace(/\s+/g, "");
+  const semantic = String(deal.STAGE_SEMANTIC_ID ?? "").trim().toUpperCase();
+  return semantic !== "F"
+    && stageId !== `C${categoryId}:LOSE`
+    && !/:(?:LOSE|LOST|PERDID(?:O|A|OS|AS)?)$/.test(stageId)
+    && rouletteValue(deal).toLocaleLowerCase().includes(rouletteTag.toLocaleLowerCase());
 }
 
 
@@ -351,6 +354,8 @@ async function fetchPage(start, period) {
   const params = new URLSearchParams({
 
     "filter[CATEGORY_ID]": categoryId,
+
+    "filter[!STAGE_ID]": `C${categoryId}:LOSE`,
 
     [`filter[=%${rouletteField}]`]: `%${rouletteTag}%`,
 

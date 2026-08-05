@@ -1,6 +1,7 @@
 import "server-only";
 
 import { bitrixCallPage, hasBitrixEnv } from "@/lib/bitrix/client";
+import { isComercialGeralLostStage } from "@/lib/bitrix/comercial-geral-stage";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type JsonRecord = Record<string, unknown>;
@@ -19,6 +20,31 @@ export type ComercialGeralSyncSummary = {
 
 function chunks<T>(items: T[], size: number) {
   return Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size));
+}
+
+async function removeHistoricalLostDeals(
+  admin: ReturnType<typeof createAdminClient>,
+  rouletteId: string,
+  categoryId: string,
+) {
+  const { data, error } = await admin
+    .from("oportunidades")
+    .select("id, bitrix_stage_id")
+    .eq("roleta_id", rouletteId)
+    .is("captada_em", null);
+  if (error) throw error;
+
+  const staleIds = (data ?? [])
+    .filter((item) => isComercialGeralLostStage({ STAGE_ID: item.bitrix_stage_id }, categoryId))
+    .map((item) => item.id);
+  if (!staleIds.length) return 0;
+
+  for (const batch of chunks(staleIds, 250)) {
+    const { error: deleteError } = await admin.from("oportunidades").delete().in("id", batch);
+    if (deleteError) throw deleteError;
+  }
+
+  return staleIds.length;
 }
 
 function sleep(ms: number) {
@@ -74,6 +100,7 @@ function rouletteValue(deal: JsonRecord, rouletteField: string) {
 
 function isFocusDeal(deal: JsonRecord, config: ReturnType<typeof getSyncConfig>) {
   return String(deal.CATEGORY_ID ?? "") === config.categoryId
+    && !isComercialGeralLostStage(deal, config.categoryId)
     && rouletteValue(deal, config.rouletteField).toLocaleLowerCase().includes(config.rouletteTag.toLocaleLowerCase());
 }
 
@@ -105,6 +132,7 @@ async function fetchComercialGeralPage(
 
   const params = new URLSearchParams({
     "filter[CATEGORY_ID]": config.categoryId,
+    "filter[!STAGE_ID]": `C${config.categoryId}:LOSE`,
     [`filter[=%${config.rouletteField}]`]: `%${config.rouletteTag}%`,
     "filter[>=DATE_CREATE]": period.dateFrom,
     "filter[<=DATE_CREATE]": period.dateTo,
@@ -238,6 +266,8 @@ async function runSyncComercialGeralDeals(): Promise<ComercialGeralSyncSummary> 
 
     await sleep(800);
   }
+
+  await removeHistoricalLostDeals(admin, roulette.id, config.categoryId);
 
   const firstMonth = config.months[0];
   const lastMonth = config.months[config.months.length - 1];

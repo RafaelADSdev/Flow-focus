@@ -463,7 +463,14 @@ function listComercialGeralMonthPeriods(year = Number(Deno.env.get("YEAR") ?? ne
 }
 
 function isComercialGeralFocus(deal: JsonRecord) {
+  const stageId = String(deal.STAGE_ID ?? "").trim().toUpperCase().replace(/\s+/g, "");
+  const semantic = String(deal.STAGE_SEMANTIC_ID ?? "").trim().toUpperCase();
+  const isLost = semantic === "F"
+    || stageId === `C${captureCategoryId}:LOSE`
+    || /:(?:LOSE|LOST|PERDID(?:O|A|OS|AS)?)$/.test(stageId);
+
   return String(deal.CATEGORY_ID ?? "") === captureCategoryId
+    && !isLost
     && rouletteValue(deal).toLocaleLowerCase().includes(rouletteTag.toLocaleLowerCase());
 }
 
@@ -478,6 +485,7 @@ function stageWithSemantic(deal: JsonRecord) {
 async function fetchComercialGeralPage(start: number, dateFrom: string, dateTo: string) {
   const params = new URLSearchParams({
     "filter[CATEGORY_ID]": captureCategoryId,
+    "filter[!STAGE_ID]": `C${captureCategoryId}:LOSE`,
     [`filter[=%${rouletteField}]`]: `%${rouletteTag}%`,
     "filter[>=DATE_CREATE]": dateFrom,
     "filter[<=DATE_CREATE]": dateTo,
