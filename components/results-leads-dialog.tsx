@@ -97,7 +97,7 @@ export function ResultsLeadsDialog({
   if (!bucket) return null;
 
   const summary = bucket === "quarentena"
-    ? `${filtered.length} lead${filtered.length === 1 ? "" : "s"} com status EM QUARENTENA no Comercial Geral (Bitrix24).`
+    ? `${filtered.length} captura${filtered.length === 1 ? "" : "s"} confirmada${filtered.length === 1 ? "" : "s"} no período que hoje ${filtered.length === 1 ? "está" : "estão"} em quarentena no Comercial Geral.`
     : `${filtered.length} lead${filtered.length === 1 ? "" : "s"} capturado${filtered.length === 1 ? "" : "s"} pela Minha carteira neste recorte.`;
 
   return (

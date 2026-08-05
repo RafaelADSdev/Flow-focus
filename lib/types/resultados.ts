@@ -18,6 +18,8 @@ export type ResultadoCapturaEquipe = {
   equipeId: string;
   equipe: string;
   total: number;
+  andamento: number;
+  perdidos: number;
   quarentena: number;
 };
 

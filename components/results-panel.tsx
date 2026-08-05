@@ -112,7 +112,7 @@ export function ResultsPanel({ data, range = null, bitrixPortalBase = "" }: { da
           </button>
           <span className="sync-label">Atualizado {formatDate(displayedSyncedAt)}</span>
         </div>
-        <p className="results-sync-note">Capturas e gráficos vêm da Minha carteira. Quarentena vem do Comercial Geral no Bitrix24. A sincronização também atualiza equipes e fotos.</p>
+        <p className="results-sync-note">Capturas, gráficos e quarentena vêm das capturas confirmadas pela Minha carteira no período. A sincronização também atualiza equipes e fotos.</p>
       </div>
 
       {error ? <p className="form-error" role="alert">{error}</p> : null}
@@ -121,6 +121,8 @@ export function ResultsPanel({ data, range = null, bitrixPortalBase = "" }: { da
         capturasPorEquipe={data.capturasPorEquipe}
         topCorretores={data.topCorretores}
         totalCapturados={data.indicadores.total}
+        totalAndamento={data.indicadores.andamento}
+        totalPerdidos={data.indicadores.perdidos}
         totalQuarentena={data.indicadores.quarentena}
       />
 

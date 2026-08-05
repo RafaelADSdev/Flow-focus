@@ -3,11 +3,8 @@ import "server-only";
 import { fetchBitrixDealStages, stripStageSemanticSuffix } from "@/lib/bitrix/deal-stages";
 import {
   fetchCapturedDealSnapshots,
-  isQuarantineSnapshot,
-  isSignedContractSnapshot,
   type CapturedDealSnapshot,
 } from "@/lib/bitrix/fetch-captured-deal-snapshots";
-import { fetchQuarantineDeals, type QuarantineDeal } from "@/lib/bitrix/fetch-quarantine-deals";
 import { fetchBitrixUserPhotos } from "@/lib/bitrix/fetch-user-photos";
 import { getViewerContext, type ViewerContext } from "@/lib/auth/viewer-context";
 import { canViewResultados } from "@/lib/auth/perfil";
@@ -15,6 +12,7 @@ import { isContaDemonstracao } from "@/lib/auth/conta-demonstracao";
 import type { StatusOportunidade } from "@/lib/database.types";
 import { getBitrixCaptureTarget } from "@/lib/bitrix/capture-target";
 import { filterCapturasConfirmadasDoSistema, isCapturaDoSistema, partitionRoletas } from "@/lib/data/captura-sistema";
+import { bucketForSystemCapture } from "@/lib/data/resultados-captura";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasSupabaseEnv, hasSupabaseSecretKey } from "@/lib/supabase/env";
 import { isDateInResultadosRange, type ResultadosDateRange } from "@/lib/resultados-filters";
@@ -43,54 +41,6 @@ function emptyData(): ResultadosData {
   };
 }
 
-function normalize(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
-}
-
-function configuredIds(value: string | undefined) {
-  return new Set(String(value ?? "").split(",").map((item) => item.trim()).filter(Boolean));
-}
-
-function classifyLocal(
-  status: StatusOportunidade,
-  stage: string,
-  stageId: string,
-): Exclude<ResultadoBucket, "total" | "vendas" | "quarentena"> {
-  const normalized = normalize(`${stage} ${stageId}`);
-  const returnIds = configuredIds(
-    process.env.BITRIX24_RETURN_TO_POOL_STAGE_IDS
-      ?? process.env.BITRIX24_FILTER_STAGE_ID
-      ?? "C36:NEW",
-  );
-  if (returnIds.has(stageId) || normalized.includes("bolsao") || normalized.includes("retorn")) return "retornaram";
-  if (status === "perdida") return "perdidos";
-  return "andamento";
-}
-
-function classifyCapturaSistema(
-  status: StatusOportunidade,
-  stage: string,
-  stageId: string,
-  snapshot?: CapturedDealSnapshot,
-): Exclude<ResultadoBucket, "total" | "quarentena"> {
-  if (snapshot) {
-    if (isSignedContractSnapshot(snapshot)) return "vendas";
-    if (snapshot.stageSemantic.toUpperCase() === "F") return "perdidos";
-  } else if (status === "convertida") {
-    return "vendas";
-  }
-
-  return classifyLocal(status, stage, stageId);
-}
-
-function isQuarentenaComercialGeral(snapshot: CapturedDealSnapshot | undefined, comercialCategoryId: string) {
-  return Boolean(
-    snapshot
-    && snapshot.categoryId === comercialCategoryId
-    && isQuarantineSnapshot(snapshot),
-  );
-}
-
 function situation(bucket: Exclude<ResultadoBucket, "total">) {
   return {
     andamento: "Em andamento",
@@ -107,6 +57,11 @@ function inScope(viewer: ViewerContext, user: { id: string; equipe_id: string | 
   return user.equipe_id === viewer.equipeId;
 }
 
+function inEquipeScope(viewer: ViewerContext, equipeId: string) {
+  if (viewer.perfil === "admin" || viewer.perfil === "diretora") return true;
+  return viewer.equipeId === equipeId;
+}
+
 async function listCapturedOpportunities(admin: ReturnType<typeof createAdminClient>) {
   const rows: OpportunityRow[] = [];
   for (let from = 0; ; from += 1000) {
@@ -116,29 +71,6 @@ async function listCapturedOpportunities(admin: ReturnType<typeof createAdminCli
       .not("corretor_id", "is", null)
       .not("captada_em", "is", null)
       .order("captada_em", { ascending: false })
-      .range(from, from + 999);
-    if (error) throw new Error(error.message);
-    if (!data?.length) break;
-    rows.push(...(data as OpportunityRow[]));
-    if (data.length < 1000) break;
-  }
-  return rows;
-}
-
-async function listComercialGeralOpportunities(
-  admin: ReturnType<typeof createAdminClient>,
-  roletaIds: Set<string>,
-) {
-  if (!roletaIds.size) return [] as OpportunityRow[];
-  const rows: OpportunityRow[] = [];
-  const roletaIdList = [...roletaIds];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await admin
-      .from("oportunidades")
-      .select("id, bitrix_deal_id, corretor_id, roleta_id, titulo, status, captada_em, data_criacao_bitrix, bitrix_stage_id, ultima_atualizacao_bitrix")
-      .not("corretor_id", "is", null)
-      .in("roleta_id", roletaIdList)
-      .order("ultima_atualizacao_bitrix", { ascending: false })
       .range(from, from + 999);
     if (error) throw new Error(error.message);
     if (!data?.length) break;
@@ -173,34 +105,6 @@ function mapOpportunityToLead(
     situacao: situation(bucket),
     bucket,
   } satisfies ResultadoLead;
-}
-
-function mapQuarantineDealToLead(
-  deal: QuarantineDeal,
-  corretor: UserRow,
-  opportunity: OpportunityRow | undefined,
-  stageNamesByCategory: Map<string, Map<string, string>>,
-): ResultadoLead {
-  const stageId = stripStageSemanticSuffix(deal.stageId);
-  const stage = stageNamesByCategory.get(deal.categoryId)?.get(stageId) ?? "Etapa não identificada";
-  const captadaEm = opportunity?.captada_em
-    ?? opportunity?.data_criacao_bitrix
-    ?? deal.dateCreate
-    ?? deal.dateModify
-    ?? new Date().toISOString();
-  return {
-    id: opportunity?.id ?? `quarentena:${deal.bitrixDealId}`,
-    bitrixDealId: deal.bitrixDealId,
-    cliente: deal.titulo || opportunity?.titulo?.trim() || `Negócio #${deal.bitrixDealId}`,
-    corretorId: corretor.id,
-    corretor: corretor.nome,
-    equipe: corretor.equipe_nome?.trim() || "Sem equipe",
-    captadaEm,
-    etapaAtual: stage,
-    ultimaAtualizacao: deal.dateModify ?? opportunity?.ultima_atualizacao_bitrix ?? null,
-    situacao: situation("quarentena"),
-    bucket: "quarentena",
-  };
 }
 
 async function listRoletas(admin: ReturnType<typeof createAdminClient>) {
@@ -278,21 +182,31 @@ async function resolveBrokerPhotos(users: Iterable<UserRow>) {
 }
 
 function buildCapturaStats(
-  capturaLeads: ResultadoLead[],
-  quarentenaLeads: ResultadoLead[],
+  systemLeads: ResultadoLead[],
   photosByUserId: Map<string, string | null>,
+  equipes: Array<{ id: string; nome: string }>,
 ) {
-  const byTeam = new Map<string, { equipeId: string; equipe: string; total: number; quarentena: number }>();
+  const byTeam = new Map<string, { equipeId: string; equipe: string; total: number; andamento: number; perdidos: number; quarentena: number }>();
   const byBroker = new Map<string, ResultadoTopCorretor>();
 
-  function ensureTeam(equipe: string) {
-    const teamEntry = byTeam.get(equipe) ?? { equipeId: equipe, equipe, total: 0, quarentena: 0 };
+  function ensureTeam(equipeId: string, equipe: string) {
+    const teamEntry = byTeam.get(equipe) ?? { equipeId, equipe, total: 0, andamento: 0, perdidos: 0, quarentena: 0 };
     byTeam.set(equipe, teamEntry);
     return teamEntry;
   }
 
-  for (const lead of capturaLeads) {
-    ensureTeam(lead.equipe).total += 1;
+  for (const equipe of equipes) {
+    const nome = equipe.nome.trim();
+    if (!nome) continue;
+    ensureTeam(equipe.id, nome);
+  }
+
+  for (const lead of systemLeads) {
+    const teamEntry = ensureTeam(lead.equipe, lead.equipe);
+    teamEntry.total += 1;
+    if (lead.bucket === "andamento") teamEntry.andamento += 1;
+    if (lead.bucket === "perdidos") teamEntry.perdidos += 1;
+    if (lead.bucket === "quarentena") teamEntry.quarentena += 1;
 
     const brokerEntry = byBroker.get(lead.corretorId) ?? {
       corretorId: lead.corretorId,
@@ -305,14 +219,22 @@ function buildCapturaStats(
     byBroker.set(lead.corretorId, brokerEntry);
   }
 
-  for (const lead of quarentenaLeads) {
-    ensureTeam(lead.equipe).quarentena += 1;
-  }
+  const capturasPorEquipe = equipes
+    .map((equipe) => {
+      const nome = equipe.nome.trim();
+      return byTeam.get(nome) ?? {
+        equipeId: equipe.id,
+        equipe: nome,
+        total: 0,
+        andamento: 0,
+        perdidos: 0,
+        quarentena: 0,
+      };
+    })
+    .sort((a, b) => b.total - a.total || a.equipe.localeCompare(b.equipe, "pt-BR"));
 
   return {
-    capturasPorEquipe: [...byTeam.values()].sort(
-      (a, b) => (b.total + b.quarentena) - (a.total + a.quarentena) || a.equipe.localeCompare(b.equipe, "pt-BR"),
-    ),
+    capturasPorEquipe,
     topCorretores: [...byBroker.values()]
       .sort((a, b) => b.total - a.total || a.corretor.localeCompare(b.corretor, "pt-BR"))
       .slice(0, 5),
@@ -325,18 +247,24 @@ export async function getResultadosData(range: ResultadosDateRange | null = null
   if (!viewer || !canViewResultados(viewer.perfil)) return emptyData();
 
   const admin = createAdminClient();
-  const [usersResult, roletas, brokerRoletaPairs, capturedOpportunities, capturasDiariasResult] = await Promise.all([
+  const [usersResult, equipesResult, roletas, brokerRoletaPairs, capturedOpportunities, capturasDiariasResult] = await Promise.all([
     admin.from("usuarios").select("id, nome, email, equipe_id, equipe_nome, perfil, foto_url, bitrix_user_id").eq("ativo", true).eq("perfil", "corretor"),
+    admin.from("equipes").select("id, nome").order("nome"),
     listRoletas(admin),
     listBrokerRoletaPairs(admin),
     listCapturedOpportunities(admin),
     admin.from("capturas_diarias").select("corretor_id, data, quantidade_captada"),
   ]);
   if (usersResult.error) throw new Error(usersResult.error.message);
+  if (equipesResult.error) throw new Error(equipesResult.error.message);
   if (capturasDiariasResult.error) throw new Error(capturasDiariasResult.error.message);
 
+  const scopedEquipes = (equipesResult.data ?? [])
+    .filter((equipe) => inEquipeScope(viewer, equipe.id))
+    .map((equipe) => ({ id: equipe.id, nome: equipe.nome.trim() }))
+    .filter((equipe) => equipe.nome);
+
   const { capturaRoletaIds, comercialGeralRoletaIds } = partitionRoletas(roletas);
-  const comercialOpportunities = await listComercialGeralOpportunities(admin, comercialGeralRoletaIds);
 
   const users = new Map(
     (usersResult.data ?? [])
@@ -364,77 +292,32 @@ export async function getResultadosData(range: ResultadosDateRange | null = null
     capturasDiariasResult.data ?? [],
   );
 
-  const scopedComercial = comercialOpportunities.filter(inBrokerCarteira);
-
-  const snapshotDealIds = [
-    ...new Set([
-      ...confirmedCapturas.map((item) => item.bitrix_deal_id),
-      ...scopedComercial.map((item) => item.bitrix_deal_id),
-    ]),
-  ];
+  const snapshotDealIds = [...new Set(confirmedCapturas.map((item) => item.bitrix_deal_id))];
   const comercialCategoryId = getBitrixCaptureTarget().categoryId;
-  const [snapshots, quarantineDeals] = await Promise.all([
-    fetchCapturedDealSnapshots(snapshotDealIds),
-    fetchQuarantineDeals(comercialCategoryId).catch(() => [] as QuarantineDeal[]),
-  ]);
+  const snapshots = await fetchCapturedDealSnapshots(snapshotDealIds);
   const stageNamesByCategory = await buildStageNameMaps([
     comercialCategoryId,
     ...[...snapshots.values()].map((snapshot) => snapshot.categoryId),
-    ...quarantineDeals.map((deal) => deal.categoryId),
   ]);
 
-  const capturaLeads: ResultadoLead[] = confirmedCapturas.map((item) => {
+  const systemLeads: ResultadoLead[] = confirmedCapturas.map((item) => {
     const snapshot = snapshots.get(item.bitrix_deal_id);
     const stageId = stripStageSemanticSuffix(snapshot?.stageId ?? item.bitrix_stage_id);
     const stage = resolveStageName(stageNamesByCategory, snapshot, item.bitrix_stage_id, "Etapa não identificada");
-    const bucket = classifyCapturaSistema(item.status, stage, stageId, snapshot);
+    const bucket = bucketForSystemCapture(item.status, stage, stageId, snapshot, comercialCategoryId);
     return mapOpportunityToLead(item, users, snapshots, stageNamesByCategory, bucket);
   });
 
-  const quarentenaSeen = new Set<string>();
-  const quarentenaLeads: ResultadoLead[] = [];
-
-  const usersByBitrixId = new Map<string, UserRow>();
-  for (const user of users.values()) {
-    const bitrixId = user.bitrix_user_id?.trim();
-    if (bitrixId) usersByBitrixId.set(bitrixId, user);
-  }
-
-  const opportunityByDealId = new Map<string, OpportunityRow>();
-  for (const item of [...capturedOpportunities, ...comercialOpportunities]) {
-    if (!opportunityByDealId.has(item.bitrix_deal_id)) opportunityByDealId.set(item.bitrix_deal_id, item);
-  }
-
-  for (const deal of quarantineDeals) {
-    const corretor = usersByBitrixId.get(deal.assignedById);
-    if (!corretor || quarentenaSeen.has(deal.bitrixDealId)) continue;
-    quarentenaSeen.add(deal.bitrixDealId);
-    quarentenaLeads.push(
-      mapQuarantineDealToLead(deal, corretor, opportunityByDealId.get(deal.bitrixDealId), stageNamesByCategory),
-    );
-  }
-
-  for (const item of [...confirmedCapturas, ...scopedComercial]) {
-    if (quarentenaSeen.has(item.bitrix_deal_id)) continue;
-    const snapshot = snapshots.get(item.bitrix_deal_id);
-    if (!isQuarentenaComercialGeral(snapshot, comercialCategoryId)) continue;
-    quarentenaSeen.add(item.bitrix_deal_id);
-    quarentenaLeads.push(mapOpportunityToLead(item, users, snapshots, stageNamesByCategory, "quarentena"));
-  }
-
-  const filteredCapturaLeads = capturaLeads.filter((lead) => isDateInResultadosRange(lead.captadaEm, range));
-  const filteredQuarentenaLeads = quarentenaLeads.filter((lead) => isDateInResultadosRange(lead.captadaEm, range));
-  const leads = [...filteredCapturaLeads, ...filteredQuarentenaLeads];
+  const leads = systemLeads.filter((lead) => isDateInResultadosRange(lead.captadaEm, range));
   const photosByUserId = await resolveBrokerPhotos(users.values());
 
-  const indicadores = filteredCapturaLeads.reduce<ResultadosData["indicadores"]>((acc, lead) => {
+  const indicadores = leads.reduce<ResultadosData["indicadores"]>((acc, lead) => {
     acc.total += 1;
     acc[lead.bucket] += 1;
     return acc;
   }, { total: 0, andamento: 0, vendas: 0, perdidos: 0, retornaram: 0, quarentena: 0 });
-  indicadores.quarentena = filteredQuarentenaLeads.length;
 
-  const { capturasPorEquipe, topCorretores } = buildCapturaStats(filteredCapturaLeads, filteredQuarentenaLeads, photosByUserId);
+  const { capturasPorEquipe, topCorretores } = buildCapturaStats(leads, photosByUserId, scopedEquipes);
 
   return { indicadores, leads, capturasPorEquipe, topCorretores, geradoEm: new Date().toISOString() };
 }
