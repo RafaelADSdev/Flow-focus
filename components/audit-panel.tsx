@@ -58,6 +58,7 @@ export function AuditPanel({ data, bitrixPortalBase = "" }: { data: AuditoriasPa
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const drawerRef = useRef<HTMLElement>(null);
 
   const queue = useMemo(() => mapQueue(data.fila), [data.fila]);
@@ -101,6 +102,12 @@ export function AuditPanel({ data, bitrixPortalBase = "" }: { data: AuditoriasPa
     setChecked(Object.fromEntries(item.leads.map((lead) => [lead.id, checklistFromLead(lead)])));
     setNotes(Object.fromEntries(item.leads.map((lead) => [lead.id, lead.observacao_lideranca ?? ""])));
     setSelectedId(item.id);
+  }
+
+  async function refreshQueue() {
+    setRefreshing(true);
+    router.refresh();
+    window.setTimeout(() => setRefreshing(false), 600);
   }
 
   async function save() {
@@ -158,7 +165,16 @@ export function AuditPanel({ data, bitrixPortalBase = "" }: { data: AuditoriasPa
               . Cada lead aprovado libera uma vaga imediatamente, até o teto de 6 ativos por corretor.
             </p>
           </div>
-          <span className="sync-label"><RefreshCw size={14} />Sincronizado {formatDate(data.gerado_em)}</span>
+          <button
+            type="button"
+            className="button button-quiet sync-label"
+            onClick={() => void refreshQueue()}
+            disabled={refreshing}
+            aria-busy={refreshing}
+          >
+            <RefreshCw className={refreshing ? "is-spinning" : ""} size={14} />
+            {refreshing ? "Atualizando…" : `Sincronizado ${formatDate(data.gerado_em)}`}
+          </button>
           </div>
 
           <div className="audit-stats" aria-label="Resumo da auditoria">
