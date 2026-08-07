@@ -24,6 +24,20 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// O Bitrix devolve 429 em dois casos bem diferentes: QUERY_LIMIT_EXCEEDED é o teto por segundo e
+// passa sozinho, mas OPERATION_TIME_LIMIT bloqueia o método por minutos — insistir só queima mais
+// orçamento e devolve um erro genérico no fim.
+const METHOD_BLOCKED_ERROR = "OPERATION_TIME_LIMIT";
+
+async function readBitrixErrorCode(response: Response) {
+  try {
+    const body = await response.json() as BitrixResponse<unknown>;
+    return String(body.error ?? "");
+  } catch {
+    return "";
+  }
+}
+
 async function fetchBitrixPage<T>(url: URL, timeoutMs: number) {
   const maxAttempts = 6;
 
@@ -33,9 +47,16 @@ async function fetchBitrixPage<T>(url: URL, timeoutMs: number) {
       signal: AbortSignal.timeout(timeoutMs),
     });
 
-    if ((response.status === 429 || response.status === 503 || response.status === 502) && attempt < maxAttempts) {
-      await sleep((response.status === 429 ? 1_500 : 2_000) * attempt);
-      continue;
+    if (response.status === 429 || response.status === 503 || response.status === 502) {
+      if (await readBitrixErrorCode(response) === METHOD_BLOCKED_ERROR) {
+        throw new Error(
+          "O Bitrix24 bloqueou temporariamente esta consulta por excesso de tempo de operação. Tente novamente em alguns minutos.",
+        );
+      }
+      if (attempt < maxAttempts) {
+        await sleep((response.status === 429 ? 1_500 : 2_000) * attempt);
+        continue;
+      }
     }
 
     if (!response.ok) {

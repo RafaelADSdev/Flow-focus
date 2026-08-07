@@ -1,8 +1,9 @@
 import "server-only";
 
-import { cached, invalidateCachePrefix, mapLimit } from "@/lib/bitrix/cache";
+import { cached, invalidateCachePrefix } from "@/lib/bitrix/cache";
 import { bitrixCallPage } from "@/lib/bitrix/client";
 import { fetchBitrixDealStages } from "@/lib/bitrix/deal-stages";
+import { collectBitrixPagesById } from "@/lib/bitrix/keyset-pagination";
 import type {
   BitrixTeamUser,
   BrokerPipelineRow,
@@ -237,46 +238,82 @@ async function getPipelineStages(categoryId: string) {
   });
 }
 
-const DEALS_CACHE_TTL_MS = 60_000;
+const OPEN_DEALS_TTL_MS = 60_000;
+// A varredura de fechados custa ~90s do orçamento de operação do Bitrix; renová-la a cada minuto
+// era o que derrubava o crm.deal.list. Ganhos e perdidos de um período mudam devagar.
+const CLOSED_DEALS_TTL_MS = 15 * 60_000;
 
-async function listDeals(
-  userId: string,
+const OPEN_DEAL_FIELDS = [
+  "ID", "TITLE", "STAGE_ID", "CATEGORY_ID", "ASSIGNED_BY_ID", "DATE_MODIFY", "DATE_CREATE",
+  "SOURCE_ID", "UF_CRM_1717073472", "UF_CRM_1726060130", "UF_CRM_1726060110",
+  "UF_CRM_1746557234244", ROULETTE_FIELD,
+];
+const CLOSED_DEAL_FIELDS = ["ID", "STAGE_ID", "ASSIGNED_BY_ID"];
+
+// "Atualizar" precisa derrubar também a estrutura (corretores, etapas, pipeline), senão o botão
+// devolve o mesmo quadro por até 30 minutos mesmo com os negócios recarregados.
+function invalidateTeamStructureCache() {
+  for (const prefix of ["team:pipeline", "team:stages:", "team:users:", "team:departments"]) {
+    invalidateCachePrefix(prefix);
+  }
+}
+
+function brokerScopeKey(brokerIds: readonly string[]) {
+  const sorted = [...brokerIds].sort();
+  let hash = 0;
+  for (const character of sorted.join(",")) hash = (hash * 31 + character.charCodeAt(0)) | 0;
+  return `${sorted.length}-${(hash >>> 0).toString(36)}`;
+}
+
+// Uma varredura para todos os corretores de uma vez. O modelo anterior disparava duas consultas por
+// corretor (42 corretores = 240+ requisições paginadas por carregamento) e o Bitrix bloqueava o
+// método no meio do caminho; quem sobrasse voltava com zero negócios.
+async function listPipelineDeals(
+  brokerIds: readonly string[],
   categoryId: string,
   options: { closed: boolean; month?: string | null; fresh?: boolean },
 ) {
-  const range = monthRange(options.month);
-  const cacheKey = `team:deals:${categoryId}:${userId}:${options.closed ? "closed" : "open"}:${options.month ?? "all"}`;
+  if (!brokerIds.length) return [];
+  // O período filtra por DATE_CREATE, então só se aplica aos fechados (ganhos/perdidos no período).
+  // Os abertos são o estado atual do funil: recortá-los por data de criação esconde do gráfico
+  // negócios criados antes do período que continuam vivos em uma etapa.
+  const range = options.closed ? monthRange(options.month) : null;
+  const scope = options.closed ? options.month ?? "all" : "all";
+  const cacheKey = `team:deals:${categoryId}:${options.closed ? "closed" : "open"}:${scope}:${brokerScopeKey(brokerIds)}`;
   if (options.fresh) invalidateCachePrefix(cacheKey);
-  return cached(cacheKey, DEALS_CACHE_TTL_MS, async () => {
-    const output: BitrixDeal[] = [];
-    let start = 0;
-    for (let page = 0; page < 40; page += 1) {
+  // Paginação por ID (start=-1) desliga o COUNT do Bitrix, que é a parte cara da consulta num funil
+  // com dezenas de milhares de negócios.
+  return cached(cacheKey, options.closed ? CLOSED_DEALS_TTL_MS : OPEN_DEALS_TTL_MS, () => (
+    collectBitrixPagesById<BitrixDeal>(async (lastId) => {
       const query: Record<string, string> = {
-        "filter[=ASSIGNED_BY_ID]": userId,
         "filter[=CATEGORY_ID]": categoryId,
         "filter[CLOSED]": options.closed ? "Y" : "N",
-        start: String(start),
+        "filter[>ID]": lastId,
         "order[ID]": "ASC",
+        start: "-1",
       };
-      const fields = options.closed
-        ? ["ID", "STAGE_ID"]
-        : [
-            "ID", "TITLE", "STAGE_ID", "CATEGORY_ID", "ASSIGNED_BY_ID", "DATE_MODIFY", "DATE_CREATE",
-            "SOURCE_ID", "UF_CRM_1717073472", "UF_CRM_1726060130", "UF_CRM_1726060110",
-            "UF_CRM_1746557234244", ROULETTE_FIELD,
-          ];
+      brokerIds.forEach((id, index) => { query[`filter[@ASSIGNED_BY_ID][${index}]`] = id; });
+      const fields = options.closed ? CLOSED_DEAL_FIELDS : OPEN_DEAL_FIELDS;
       fields.forEach((field, index) => { query[`select[${index}]`] = field; });
       if (range) {
         query["filter[>=DATE_CREATE]"] = range.from;
         query["filter[<DATE_CREATE]"] = range.to;
       }
-      const response = await bitrixCallPage<BitrixDeal[]>("crm.deal.list", params(query), 20_000);
-      output.push(...response.result);
-      if (typeof response.next !== "number") break;
-      start = response.next;
-    }
-    return output;
-  });
+      const response = await bitrixCallPage<BitrixDeal[]>("crm.deal.list", params(query), 30_000);
+      return response.result;
+    })
+  ));
+}
+
+function groupByAssignee(deals: readonly BitrixDeal[]) {
+  const grouped = new Map<string, BitrixDeal[]>();
+  for (const deal of deals) {
+    const id = String(deal.ASSIGNED_BY_ID);
+    const bucket = grouped.get(id);
+    if (bucket) bucket.push(deal);
+    else grouped.set(id, [deal]);
+  }
+  return grouped;
 }
 
 function focusRootIds(allDepartments: readonly Department[]) {
@@ -341,6 +378,7 @@ async function buildTeamPipeline(
   month: string | null,
   fresh = false,
 ): Promise<TeamPipeline> {
+  if (fresh) invalidateTeamStructureCache();
   const pipeline = await resolvePipeline();
   const [members, stages] = await Promise.all([
     listUsersInDepartments(departments.map((department) => department.id)),
@@ -349,13 +387,20 @@ async function buildTeamPipeline(
   const brokers = members.filter((member) => !isLeaderish(member.workPosition));
   const lostStages = new Set(stages.filter((stage) => /perdid|prazo/i.test(stage.name) || /LOSE/i.test(stage.id)).map((stage) => stage.id));
   const stageNames = new Map(stages.map((stage) => [stage.id, stage.name]));
-  const results = await mapLimit(brokers, brokers.length > 20 ? 3 : 6, async (user) => {
-    const [openDeals, closedDeals] = await Promise.all([
-      listDeals(user.ID, pipeline.id, { closed: false, month, fresh }).catch(() => []),
-      listDeals(user.ID, pipeline.id, { closed: true, month, fresh }).catch(() => []),
-    ]);
-    return { user, openDeals, closedDeals };
-  });
+  const brokerIds = brokers.map((broker) => broker.ID);
+  // Sem catch: uma falha do Bitrix aqui virava "zero negócios" para o corretor e a tela exibia
+  // números incompletos como se estivessem certos. Melhor propagar e mostrar o erro.
+  const [openDeals, closedDeals] = await Promise.all([
+    listPipelineDeals(brokerIds, pipeline.id, { closed: false, month, fresh }),
+    listPipelineDeals(brokerIds, pipeline.id, { closed: true, month, fresh }),
+  ]);
+  const openByBroker = groupByAssignee(openDeals);
+  const closedByBroker = groupByAssignee(closedDeals);
+  const results = brokers.map((user) => ({
+    user,
+    openDeals: openByBroker.get(user.ID) ?? [],
+    closedDeals: closedByBroker.get(user.ID) ?? [],
+  }));
 
   const stageTotals: Record<string, number> = Object.fromEntries(stages.map((stage) => [stage.id, 0]));
   const stageCriticos: Record<string, number> = Object.fromEntries(stages.map((stage) => [stage.id, 0]));
@@ -493,7 +538,7 @@ export async function getExpiringLeadsForEmail(
 
     const pipeline = await resolvePipeline();
     const [deals, stages, sourceNames] = await Promise.all([
-      listDeals(brokerId, pipeline.id, { closed: false, fresh }),
+      listPipelineDeals([brokerId], pipeline.id, { closed: false, fresh }),
       getPipelineStages(pipeline.id),
       getSourceNameMap().catch(() => ({} as Record<string, string>)),
     ]);

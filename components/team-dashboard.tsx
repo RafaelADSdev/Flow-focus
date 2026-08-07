@@ -140,7 +140,7 @@ function MonthFilter({ value, onChange }: { value: string; onChange: (value: str
     onChange(`${year}-${String(safeMonth).padStart(2, "0")}`);
   }
   return (
-    <div className="export-team-month">
+    <div className="export-team-month" title="O período filtra ganhos, perdidos e prazos pela data de criação. As etapas do funil sempre mostram a situação atual.">
       <Calendar size={14} aria-hidden="true" />
       <select value={selectedMonth} onChange={(event) => emit(monthYear, Number(event.target.value))} aria-label="Mês">
         <option value={0}>Todos os meses</option>
@@ -418,6 +418,7 @@ export function TeamDashboard() {
 
         <section className="export-card export-stage-card">
           <header><h2>Distribuição por etapa · {department === "__all__" ? "equipe completa" : department}</h2>{query.isFetching ? <span><RefreshCw className="is-spinning" size={12} aria-hidden="true" />Atualizando gráfico…</span> : null}</header>
+          <p className="export-stage-legend">Etapas do funil espelham a situação atual no Bitrix. Perdidos e prazos seguem o período selecionado.</p>
           <TeamStageChart criticalById={aggregates.critical} stages={stages.filter((stage) => !isLostStageName(stage.name)).map((stage) => ({ id: stage.id, name: stage.name, count: aggregates.totals[stage.id] ?? 0, color: stage.color }))} />
           <div className="export-lost-list">{stages.filter((stage) => isLostStageName(stage.name)).map((stage) => <LostStageTag key={stage.id} name={stage.name} count={aggregates.totals[stage.id] ?? 0} />)}</div>
         </section>
